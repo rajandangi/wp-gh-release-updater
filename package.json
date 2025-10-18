@@ -1,0 +1,31 @@
+{
+  "name": "wp-gh-release-updater",
+  "version": "1.0.0",
+  "description": "A self-contained, zero-configuration GitHub Release Updater Manager for WordPress plugins — distributed as a Composer library package.",
+  "main": "index.js",
+  "directories": {
+    "example": "examples",
+    "test": "tests"
+  },
+  "scripts": {
+    "biome:check": "biome check src/admin/js src/admin/css",
+    "biome:check:write": "biome check --write src/admin/js src/admin/css",
+    "biome:format": "biome format --write src/admin/js src/admin/css",
+    "biome:lint": "biome lint src/admin/js src/admin/css",
+    "biome:lint:fix": "biome lint --write src/admin/js src/admin/css",
+    "biome:fix": "biome check --write --unsafe src/admin/js src/admin/css",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "wordpress",
+    "plugin",
+    "github",
+    "updater",
+    "release"
+  ],
+  "author": "Rajan Dangi",
+  "license": "GPL-2.0-or-later",
+  "devDependencies": {
+    "@biomejs/biome": "^2.2.6"
+  }
+}

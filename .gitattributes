@@ -1,0 +1,11 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Export ignore - exclude files from Composer package archives
+/.gitattributes export-ignore
+/.gitignore export-ignore
+/phpcs.xml export-ignore
+/composer.lock export-ignore
+/README copy.md export-ignore
+/CHANGELOG.md export-ignore
+/vendor export-ignore

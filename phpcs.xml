@@ -1,0 +1,47 @@
+<?xml version="1.0"?>
+<ruleset name="WP GitHub Release Updater">
+    <description>PHP_CodeSniffer configuration for WP GitHub Release Updater</description>
+
+    <!-- What to scan -->
+    <file>src/</file>
+    <file>examples/</file>
+
+    <!-- Exclude patterns -->
+    <exclude-pattern>*/vendor/*</exclude-pattern>
+    <exclude-pattern>*/node_modules/*</exclude-pattern>
+    <exclude-pattern>*/tests/*</exclude-pattern>
+    <exclude-pattern>*.js</exclude-pattern>
+    <exclude-pattern>*.css</exclude-pattern>
+
+    <!-- How to scan -->
+    <arg value="sp"/> <!-- Show sniff and progress -->
+    <arg name="basepath" value="."/> <!-- Strip the file paths -->
+    <arg name="colors"/>
+    <arg name="extensions" value="php"/>
+    <arg name="parallel" value="8"/> <!-- Enables parallel processing when available -->
+
+    <!-- Rules: Check PHP version compatibility -->
+    <config name="testVersion" value="8.3-"/>
+
+    <!-- Rules: WordPress Coding Standards -->
+    <rule ref="WordPress">
+        <!-- Allow short array syntax -->
+        <exclude name="Generic.Arrays.DisallowShortArraySyntax"/>
+
+        <!-- We use PSR-4 autoloading, so file names don't need "class-" prefix -->
+        <exclude name="WordPress.Files.FileName.InvalidClassFileName"/>
+        <exclude name="WordPress.Files.FileName.NotHyphenatedLowercase"/>
+    </rule>
+
+    <!-- Rules: WordPress Documentation Standards -->
+    <rule ref="WordPress-Docs"/>
+
+    <!-- Enforce PSR-12 coding standards -->
+    <rule ref="PSR12">
+        <!-- Allow WordPress naming conventions -->
+        <exclude name="PSR1.Methods.CamelCapsMethodName.NotCamelCaps"/>
+    </rule>
+
+    <!-- Minimum PHP version -->
+    <config name="minimum_supported_wp_version" value="6.0"/>
+</ruleset>

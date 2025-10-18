@@ -1,0 +1,25 @@
+# PHPStan configuration for WP GitHub Release Updater
+parameters:
+    level: 8
+
+    paths:
+        - src/
+        - examples/
+
+    excludePaths:
+        - vendor/
+        - src/admin/views/
+
+    # Bootstrap files for WordPress stubs
+    bootstrapFiles:
+        - vendor/php-stubs/wordpress-stubs/wordpress-stubs.php
+
+    # Allow dynamic properties for WordPress compatibility
+    ignoreErrors:
+        - '#Access to an undefined property#'
+        # Ignore missing type hints for WordPress compatibility
+        -
+            identifier: missingType.iterableValue
+
+    # Treat mixed as any for better WordPress compatibility
+    treatPhpDocTypesAsCertain: false

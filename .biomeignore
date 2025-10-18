@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+vendor/
+
+# Minified files
+*.min.js
+*.min.css
+
+# Build artifacts
+dist/
+build/
+
+# Tests
+tests/
+
+# Examples (optional - you can include these if you want to lint them)
+# examples/
