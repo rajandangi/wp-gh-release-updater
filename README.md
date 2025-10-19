@@ -4,6 +4,8 @@ A lightweight Composer library that enables manual GitHub release updates for Wo
 
 [![License: GPL v2](https://img.shields.io/badge/License-GPL%20v2-blue.svg)](https://www.gnu.org/licenses/gpl-2.0)
 [![PHP Version](https://img.shields.io/badge/PHP-%3E%3D8.3-blue)](https://php.net)
+[![CI](https://github.com/rajandangi/wp-gh-release-updater/actions/workflows/ci.yml/badge.svg)](https://github.com/rajandangi/wp-gh-release-updater/actions/workflows/ci.yml)
+[![Release](https://github.com/rajandangi/wp-gh-release-updater/actions/workflows/release.yml/badge.svg)](https://github.com/rajandangi/wp-gh-release-updater/actions/workflows/release.yml)
 
 ## Features
 

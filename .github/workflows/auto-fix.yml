@@ -1,0 +1,64 @@
+name: Auto Fix Code Style
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - fix/**
+      - feature/**
+
+permissions:
+  contents: write
+
+jobs:
+  auto-fix:
+    name: Auto Fix Code Style Issues
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          tools: composer:v2
+
+      - name: Install Composer dependencies
+        run: composer install --prefer-dist --no-progress --no-interaction
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+          cache: 'npm'
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Run PHP Code Beautifier and Fixer (PHPCBF)
+        run: composer phpcbf || true
+
+      - name: Run Rector fixes
+        run: composer rector-fix || true
+
+      - name: Run Biome fix
+        run: npm run biome:check:write || true
+
+      - name: Check for changes
+        id: git-check
+        run: |
+          git diff --exit-code || echo "changes=true" >> $GITHUB_OUTPUT
+
+      - name: Commit and push changes
+        if: steps.git-check.outputs.changes == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "style: auto-fix code style issues [skip ci]"
+          git push
