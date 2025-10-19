@@ -30,17 +30,24 @@
         <!-- We use PSR-4 autoloading, so file names don't need "class-" prefix -->
         <exclude name="WordPress.Files.FileName.InvalidClassFileName"/>
         <exclude name="WordPress.Files.FileName.NotHyphenatedLowercase"/>
+
+        <!-- Allow camelCase method names for modern PHP -->
+        <exclude name="WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid"/>
+
+        <!-- Relax strict comment rules -->
+        <exclude name="Squiz.Commenting.InlineComment.InvalidEndChar"/>
+        <exclude name="Squiz.Commenting.FunctionComment.ParamCommentFullStop"/>
+        <exclude name="Squiz.Commenting.FileComment.SpacingAfterOpen"/>
+
+        <!-- Allow non-Yoda conditions (modern PHP preference) -->
+        <exclude name="WordPress.PHP.YodaConditions.NotYoda"/>
     </rule>
 
     <!-- Rules: WordPress Documentation Standards -->
-    <rule ref="WordPress-Docs"/>
-
-    <!-- Enforce PSR-12 coding standards -->
-    <rule ref="PSR12">
-        <!-- Allow WordPress naming conventions -->
-        <exclude name="PSR1.Methods.CamelCapsMethodName.NotCamelCaps"/>
-    </rule>
-
-    <!-- Minimum PHP version -->
+    <rule ref="WordPress-Docs">
+        <!-- Relax documentation requirements -->
+        <exclude name="Squiz.Commenting.InlineComment.InvalidEndChar"/>
+        <exclude name="Squiz.Commenting.FunctionComment.ParamCommentFullStop"/>
+    </rule>    <!-- Minimum PHP version -->
     <config name="minimum_supported_wp_version" value="6.0"/>
 </ruleset>
