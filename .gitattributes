@@ -2,10 +2,35 @@
 * text=auto
 
 # Export ignore - exclude files from Composer package archives
+# These files will NOT be included when someone runs 'composer require rajandangi/wp-gh-release-updater'
+
+# Git files
 /.gitattributes export-ignore
 /.gitignore export-ignore
+/.github export-ignore
+
+# Development and CI files
+/tests export-ignore
 /phpcs.xml export-ignore
+/phpstan.neon export-ignore
+/rector.php export-ignore
+/biome.json export-ignore
 /composer.lock export-ignore
-/README copy.md export-ignore
+
+# Documentation (optional - remove these lines if you want to include docs)
+/README.md export-ignore
 /CHANGELOG.md export-ignore
+/LICENSE export-ignore
+
+# Node.js files (if you have them)
+/package.json export-ignore
+/package-lock.json export-ignore
+/node_modules export-ignore
+
+# Build/release files
+/VERSION export-ignore
+*.zip export-ignore
+*.tar.gz export-ignore
+
+# Vendor (let Composer install dependencies instead)
 /vendor export-ignore

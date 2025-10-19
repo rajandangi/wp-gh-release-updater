@@ -70,24 +70,16 @@ jobs:
           # Create temporary directory for package
           mkdir -p "/tmp/$PACKAGE_NAME"
 
-          # Copy files to package directory (excluding dev files)
-          rsync -av --progress \
-            --exclude='.git*' \
-            --exclude='.github' \
-            --exclude='tests' \
-            --exclude='node_modules' \
-            --exclude='*.zip' \
-            --exclude='*.tar.gz' \
-            --exclude='.phpcs*' \
-            --exclude='phpcs.xml' \
-            --exclude='phpstan.neon' \
-            --exclude='rector.php' \
-            --exclude='biome.json' \
-            --exclude='.DS_Store' \
-            --exclude='composer.json' \
-            --exclude='composer.lock' \
-            --exclude='package.json' \
-            ./ "/tmp/$PACKAGE_NAME/"
+          # Copy files to package directory (respecting .distignore)
+          if [ -f .distignore ]; then
+            echo "Using .distignore for exclusions"
+            rsync -av --progress \
+              --exclude-from=.distignore \
+              ./ "/tmp/$PACKAGE_NAME/"
+          else
+            echo "⚠️  .distignore not found, copying all files"
+            rsync -av --progress ./ "/tmp/$PACKAGE_NAME/"
+          fi
 
           # Create ZIP file
           cd /tmp
