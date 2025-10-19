@@ -268,8 +268,9 @@ class Config {
 		$this->plugin_basename = plugin_basename( $plugin_file );
 
 		// Set updater manager paths (where the updater files are located)
-		$this->updater_dir = plugin_dir_path( __DIR__ );  // updater-manager/
-		$this->updater_url = plugin_dir_url( __DIR__ );   // updater-manager/
+		// __DIR__ is the src/ directory, so we use it directly since admin/ is inside src/
+		$this->updater_dir = trailingslashit( __DIR__ );  // src/
+		$this->updater_url = plugin_dir_url( __FILE__ );   // src/
 
 		// Extract plugin data from file headers
 		$plugin_data          = $this->extractPluginData( $plugin_file );
