@@ -20,7 +20,6 @@
 /.distignore export-ignore
 
 # Documentation (optional - remove these lines if you want to include docs)
-/README.md export-ignore
 /CHANGELOG.md export-ignore
 
 # Node.js files (if you have them)
