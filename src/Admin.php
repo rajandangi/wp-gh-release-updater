@@ -191,7 +191,7 @@ class Admin {
 	 */
 	public function displaySettingsPage() {
 		if ( ! current_user_can( $this->config->getCapability() ) ) {
-			wp_die( __( 'You do not have sufficient permissions to access this page.' ) );
+			wp_die( esc_html__( 'You do not have sufficient permissions to access this page.' ) );
 		}
 
 		include $this->config->getUpdaterDir() . 'admin/views/settings.php';
@@ -404,8 +404,9 @@ class Admin {
 			echo '</p></div>';
 		}
 
-		// Show settings saved notice
-		if ( isset( $_GET['settings-updated'] ) && $_GET['settings-updated'] === 'true' ) {
+		// Show settings saved notice.
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- GET parameter from settings page redirect.
+		if ( isset( $_GET['settings-updated'] ) && 'true' === $_GET['settings-updated'] ) {
 			echo '<div class="notice notice-success is-dismissible"><p>';
 			echo 'Settings saved successfully.';
 			echo '</p></div>';
