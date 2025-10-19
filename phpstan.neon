@@ -9,6 +9,22 @@ parameters:
         - vendor/
         - src/admin/views/
 
+    # Strict type checking
+    checkAlwaysTrueCheckTypeFunctionCall: true
+    checkAlwaysTrueInstanceof: true
+    checkAlwaysTrueStrictComparison: true
+    checkExplicitMixedMissingReturn: true
+    checkFunctionNameCase: true
+    checkInternalClassCaseSensitivity: true
+    polluteScopeWithLoopInitialAssignments: false
+    polluteScopeWithAlwaysIterableForeach: false
+    checkTooWideReturnTypesInProtectedAndPublicMethods: true
+    checkUninitializedProperties: true
+    checkMissingCallableSignature: true
+    checkDynamicProperties: false
+    reportMaybesInMethodSignatures: true
+    reportStaticMethodSignatures: true
+
     # Report unmatched ignored errors
     reportUnmatchedIgnoredErrors: false
 

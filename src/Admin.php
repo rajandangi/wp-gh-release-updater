@@ -57,7 +57,7 @@ class Admin {
 	/**
 	 * Initialize WordPress hooks
 	 */
-	private function initHooks() {
+	private function initHooks(): void {
 		add_action( 'admin_menu', array( $this, 'addAdminMenu' ) );
 		add_action( 'admin_init', array( $this, 'registerSettings' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueueScripts' ) );
@@ -71,7 +71,7 @@ class Admin {
 	/**
 	 * Add admin menu page
 	 */
-	public function addAdminMenu() {
+	public function addAdminMenu(): void {
 		add_management_page(
 			$this->config->getPageTitle(),
 			$this->config->getMenuTitle(),
@@ -84,7 +84,7 @@ class Admin {
 	/**
 	 * Register plugin settings
 	 */
-	public function registerSettings() {
+	public function registerSettings(): void {
 		register_setting(
 			$this->config->getSettingsGroup(),
 			$this->config->getOptionName( 'repository_url' ),
@@ -137,7 +137,7 @@ class Admin {
 	 *
 	 * @param string $hook Current admin page hook
 	 */
-	public function enqueueScripts( $hook ) {
+	public function enqueueScripts( $hook ): void {
 		// Determine the menu parent prefix for the page hook
 		$menu_parent_prefix = str_replace( '.php', '', $this->config->getMenuParent() );
 		$expected_hook      = $menu_parent_prefix . '_page_' . $this->config->getSettingsPageSlug();
@@ -189,7 +189,7 @@ class Admin {
 	/**
 	 * Display settings page
 	 */
-	public function displaySettingsPage() {
+	public function displaySettingsPage(): void {
 		if ( ! current_user_can( $this->config->getCapability() ) ) {
 			wp_die( esc_html__( 'You do not have sufficient permissions to access this page.' ) );
 		}
@@ -198,33 +198,32 @@ class Admin {
 	}
 
 	/**
-	 * Settings section callback
+	 * Settings section description callback
 	 */
-	public function settingsSectionCallback() {
-		echo '<p>Configure your GitHub repository for automatic updates.</p>';
+	public function settingsSectionCallback(): void {
+		echo '<p>' . esc_html__( 'Configure your GitHub repository settings.', 'github-updater' ) . '</p>';
 	}
 
 	/**
 	 * Repository URL field callback
 	 */
-	public function repositoryUrlFieldCallback() {
+	public function repositoryUrlFieldCallback(): void {
 		$value = $this->config->getOption( 'repository_url', '' );
 		echo '<input type="text" id="repository_url" name="' . esc_attr( $this->config->getOptionName( 'repository_url' ) ) . '" value="' . esc_attr( $value ) . '" class="regular-text" placeholder="owner/repo or https://github.com/owner/repo" />';
 		echo '<p class="description">Enter the GitHub repository URL or owner/repo format.</p>';
 	}
 
 	/**
-	 * Access token field callback
+	 * Access Token field callback
 	 */
-	public function accessTokenFieldCallback() {
-		// Get decrypted token to check if one exists
-		$decrypted_token = $this->config->getAccessToken();
-		$masked_value    = ! empty( $decrypted_token ) ? str_repeat( '*', min( strlen( $decrypted_token ), 40 ) ) : '';
+	public function accessTokenFieldCallback(): void {
+		// Don't display the encrypted token value for security
+		// Show masked value if token exists
+		$has_token = ! empty( $this->config->getOption( 'access_token', '' ) );
+		$value     = $has_token ? '****************************************' : '';
 
-		echo '<input type="password" id="access_token" name="' . esc_attr( $this->config->getOptionName( 'access_token' ) ) . '" value="' . esc_attr( $masked_value ) . '" class="regular-text" placeholder="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" />';
-		echo '<p class="description">Optional: Personal Access Token for private repositories. Leave empty for public repositories.</p>';
-		echo '<p class="description"><strong>Security:</strong> Token is encrypted before storage. If you see asterisks, a token is already saved.</p>';
-		echo '<p class="description"><strong>To update:</strong> Enter a new token to replace the existing one.</p>';
+		echo '<input type="password" id="access_token" name="' . esc_attr( $this->config->getOptionName( 'access_token' ) ) . '" value="' . esc_attr( $value ) . '" class="regular-text" placeholder="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" autocomplete="off" />';
+		echo '<p class="description">GitHub Personal Access Token (optional, required for private repos).</p>';
 	}
 
 	/**
@@ -273,7 +272,7 @@ class Admin {
 	/**
 	 * AJAX handler for checking updates
 	 */
-	public function ajaxCheckForUpdates() {
+	public function ajaxCheckForUpdates(): void {
 		// Verify nonce and permissions
 		$nonce = isset( $_POST['nonce'] ) ? sanitize_text_field( wp_unslash( $_POST['nonce'] ) ) : '';
 		if ( ! wp_verify_nonce( $nonce, $this->config->getNonceName() ) || ! current_user_can( $this->config->getCapability() ) ) {
@@ -289,9 +288,9 @@ class Admin {
 	}
 
 	/**
-	 * AJAX handler for performing updates
+	 * AJAX handler for performing update
 	 */
-	public function ajaxPerformUpdate() {
+	public function ajaxPerformUpdate(): void {
 		// Verify nonce and permissions
 		$nonce = isset( $_POST['nonce'] ) ? sanitize_text_field( wp_unslash( $_POST['nonce'] ) ) : '';
 		if ( ! wp_verify_nonce( $nonce, $this->config->getNonceName() ) || ! current_user_can( $this->config->getCapability() ) ) {
@@ -306,7 +305,7 @@ class Admin {
 	/**
 	 * AJAX handler for testing repository access
 	 */
-	public function ajaxTestRepository() {
+	public function ajaxTestRepository(): void {
 		// Verify nonce and permissions
 		$nonce = isset( $_POST['nonce'] ) ? sanitize_text_field( wp_unslash( $_POST['nonce'] ) ) : '';
 		if ( ! wp_verify_nonce( $nonce, $this->config->getNonceName() ) || ! current_user_can( $this->config->getCapability() ) ) {
@@ -362,7 +361,7 @@ class Admin {
 	/**
 	 * AJAX handler for clearing GitHub API cache
 	 */
-	public function ajaxClearCache() {
+	public function ajaxClearCache(): void {
 		// Verify nonce and permissions
 		$nonce = isset( $_POST['nonce'] ) ? sanitize_text_field( wp_unslash( $_POST['nonce'] ) ) : '';
 		if ( ! wp_verify_nonce( $nonce, $this->config->getNonceName() ) || ! current_user_can( $this->config->getCapability() ) ) {
@@ -384,7 +383,7 @@ class Admin {
 	/**
 	 * Show admin notices
 	 */
-	public function showAdminNotices() {
+	public function showAdminNotices(): void {
 		$screen = get_current_screen();
 
 		// Determine the menu parent prefix for the page hook

@@ -98,7 +98,7 @@ class GitHubUpdaterManager {
 	/**
 	 * Register WordPress hooks
 	 */
-	private function registerHooks() {
+	private function registerHooks(): void {
 		// Activation/deactivation hooks must be registered in main plugin file
 		// So we provide public methods for those
 
@@ -111,7 +111,7 @@ class GitHubUpdaterManager {
 	 *
 	 * Called automatically on plugins_loaded hook
 	 */
-	public function init() {
+	public function init(): void {
 		// Only initialize once
 		if ( $this->initialized ) {
 			return;
@@ -140,14 +140,14 @@ class GitHubUpdaterManager {
 	 * Note: With Composer autoloading, classes are loaded automatically.
 	 * This method is kept for backward compatibility but does nothing.
 	 */
-	private function loadDependencies() {
+	private function loadDependencies(): void {
 		// Classes are autoloaded by Composer PSR-4
 	}
 
 	/**
 	 * Initialize all components
 	 */
-	private function initializeComponents() {
+	private function initializeComponents(): void {
 		// Initialize GitHub API
 		$this->github_api = new GitHubAPI( $this->config );
 
@@ -163,7 +163,7 @@ class GitHubUpdaterManager {
 	 *
 	 * Call this from register_activation_hook in your main plugin file
 	 */
-	public function activate() {
+	public function activate(): void {
 		// Create default options
 		$default_options = $this->config->getDefaultOptions();
 
@@ -185,7 +185,7 @@ class GitHubUpdaterManager {
 	 *
 	 * Call this from register_deactivation_hook in your main plugin file
 	 */
-	public function deactivate() {
+	public function deactivate(): void {
 		// Clean up temporary files if any
 		$upload_dir = wp_upload_dir();
 		$temp_files = glob( $upload_dir['basedir'] . '/wp-github-updater-temp-*' );
@@ -207,7 +207,7 @@ class GitHubUpdaterManager {
 	 *
 	 * Call this from uninstall hook to completely remove all data
 	 */
-	public function uninstall() {
+	public function uninstall(): void {
 		// Delete all plugin options
 		$option_keys = array_keys( $this->config->getDefaultOptions() );
 

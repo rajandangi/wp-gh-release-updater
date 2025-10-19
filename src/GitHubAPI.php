@@ -63,7 +63,7 @@ class GitHubAPI {
 	/**
 	 * Load configuration from WordPress options
 	 */
-	private function loadConfiguration() {
+	private function loadConfiguration(): void {
 		$repository_url = $this->config->getOption( 'repository_url', '' );
 		// Use Config's decryption method to get access token
 		$this->access_token = $this->config->getAccessToken();
@@ -103,23 +103,16 @@ class GitHubAPI {
 	}
 
 	/**
-	 * Set repository configuration
+	 * Set repository details
 	 *
 	 * @param string $owner Repository owner
 	 * @param string $repo Repository name
-	 * @param string $access_token Optional access token
+	 * @param string $token Access token (optional)
 	 */
-	public function setRepository( $owner, $repo, $access_token = '' ) {
-		$this->owner = sanitize_text_field( $owner );
-
-		// Remove .git suffix if present
-		$repo = sanitize_text_field( $repo );
-		if ( substr( $repo, -4 ) === '.git' ) {
-			$repo = substr( $repo, 0, -4 );
-		}
-
+	public function setRepository( $owner, $repo, $token = '' ): void {
+		$this->owner        = $owner;
 		$this->repo         = $repo;
-		$this->access_token = sanitize_text_field( $access_token );
+		$this->access_token = $token;
 	}
 
 	/**

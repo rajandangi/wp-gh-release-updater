@@ -38,6 +38,9 @@ return static function (RectorConfig $rectorConfig): void {
     SetList::DEAD_CODE,
     SetList::EARLY_RETURN,
     SetList::TYPE_DECLARATION,
+    SetList::STRICT_BOOLEANS,
+    SetList::INSTANCEOF,
+    SetList::PRIVATIZATION,
   ]);
 
   // Configure specific rules

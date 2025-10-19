@@ -39,20 +39,6 @@ class Updater {
 	private $current_version;
 
 	/**
-	 * Plugin file path
-	 *
-	 * @var string
-	 */
-	private $plugin_file;
-
-	/**
-	 * Plugin directory path
-	 *
-	 * @var string
-	 */
-	private $plugin_dir;
-
-	/**
 	 * Constructor
 	 *
 	 * @param Config    $config Configuration instance
@@ -62,8 +48,6 @@ class Updater {
 		$this->config          = $config;
 		$this->github_api      = $github_api;
 		$this->current_version = $config->getPluginVersion();
-		$this->plugin_file     = $config->getPluginFile();
-		$this->plugin_dir      = $config->getPluginDir();
 
 		// NOTE: Auth filter is NOT registered globally to prevent token leaks
 		// It will be added only during actual download operations
@@ -525,7 +509,7 @@ class Updater {
 	 * @param string $result Result (Success, Failure)
 	 * @param string $message Message
 	 */
-	private function logAction( $action, $result, $message ) {
+	private function logAction( $action, $result, $message ): void {
 		$log_entry = array(
 			'timestamp' => current_time( 'mysql' ),
 			'action'    => $action,

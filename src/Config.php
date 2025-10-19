@@ -45,20 +45,6 @@ class Config {
 	private $plugin_version;
 
 	/**
-	 * Plugin file path.
-	 *
-	 * @var string
-	 */
-	private $plugin_file;
-
-	/**
-	 * Plugin directory path.
-	 *
-	 * @var string
-	 */
-	private $plugin_dir;
-
-	/**
 	 * Plugin URL.
 	 *
 	 * @var string
@@ -99,13 +85,6 @@ class Config {
 	 * @var string
 	 */
 	private $option_prefix;
-
-	/**
-	 * AJAX prefix for AJAX actions.
-	 *
-	 * @var string
-	 */
-	private $ajax_prefix;
 
 	/**
 	 * Asset prefix for script/style handles.
@@ -285,8 +264,6 @@ class Config {
 		$this->validateConfig( $config );
 
 		// Set plugin paths
-		$this->plugin_file     = $plugin_file;
-		$this->plugin_dir      = plugin_dir_path( $plugin_file );
 		$this->plugin_url      = plugin_dir_url( $plugin_file );
 		$this->plugin_basename = plugin_basename( $plugin_file );
 
@@ -315,11 +292,10 @@ class Config {
 
 		// Set prefixes (wpdb prefix + plugin slug is sufficient for uniqueness)
 		$this->option_prefix = $db_prefix . $option_suffix;
-		$this->ajax_prefix   = $ajax_prefix;
 		$this->asset_prefix  = $asset_prefix;
 		$this->nonce_name    = $nonce_name;
 
-		// AJAX action names
+		// AJAX action names (use local variable, no need to store as property)
 		$this->ajax_check_action       = $ajax_prefix . 'check';
 		$this->ajax_update_action      = $ajax_prefix . 'update';
 		$this->ajax_test_repo_action   = $ajax_prefix . 'test_repo';
@@ -345,7 +321,7 @@ class Config {
 	 *
 	 * @param array $config Configuration array
 	 */
-	private function validateConfig( $config ) {
+	private function validateConfig( $config ): void {
 		// Slug is optional - will be auto-detected from filename if not provided
 
 		// Check for required menu settings
@@ -414,70 +390,56 @@ class Config {
 	/**
 	 * Get plugin slug
 	 */
-	public function getPluginSlug() {
+	public function getPluginSlug(): string {
 		return $this->plugin_slug;
 	}
 
 	/**
 	 * Get plugin name
 	 */
-	public function getPluginName() {
+	public function getPluginName(): string {
 		return $this->plugin_name;
 	}
 
 	/**
 	 * Get plugin version
 	 */
-	public function getPluginVersion() {
+	public function getPluginVersion(): string {
 		return $this->plugin_version;
-	}
-
-	/**
-	 * Get plugin file
-	 */
-	public function getPluginFile() {
-		return $this->plugin_file;
-	}
-
-	/**
-	 * Get plugin directory
-	 */
-	public function getPluginDir() {
-		return $this->plugin_dir;
 	}
 
 	/**
 	 * Get plugin URL
 	 */
-	public function getPluginUrl() {
+	public function getPluginUrl(): string {
 		return $this->plugin_url;
 	}
 
 	/**
 	 * Get updater manager directory
 	 */
-	public function getUpdaterDir() {
+	public function getUpdaterDir(): string {
 		return $this->updater_dir;
 	}
 
 	/**
 	 * Get updater manager URL
 	 */
-	public function getUpdaterUrl() {
+	public function getUpdaterUrl(): string {
 		return $this->updater_url;
 	}
 
 	/**
 	 * Get plugin basename
 	 */
-	public function getPluginBasename() {
+	public function getPluginBasename(): string {
 		return $this->plugin_basename;
 	}
 
 	/**
 	 * Get option prefix
 	 */
-	public function getOptionPrefix() {
+	public function getOptionPrefix(): string {
 		return $this->option_prefix;
 	}
 
@@ -494,112 +456,112 @@ class Config {
 	/**
 	 * Get menu parent
 	 */
-	public function getMenuParent() {
+	public function getMenuParent(): string {
 		return $this->menu_parent;
 	}
 
 	/**
 	 * Get menu title
 	 */
-	public function getMenuTitle() {
+	public function getMenuTitle(): string {
 		return $this->menu_title;
 	}
 
 	/**
 	 * Get page title
 	 */
-	public function getPageTitle() {
+	public function getPageTitle(): string {
 		return $this->page_title;
 	}
 
 	/**
 	 * Get capability required
 	 */
-	public function getCapability() {
+	public function getCapability(): string {
 		return $this->capability;
 	}
 
 	/**
 	 * Get settings page slug
 	 */
-	public function getSettingsPageSlug() {
+	public function getSettingsPageSlug(): string {
 		return $this->settings_page_slug;
 	}
 
 	/**
 	 * Get settings group
 	 */
-	public function getSettingsGroup() {
+	public function getSettingsGroup(): string {
 		return $this->settings_group;
 	}
 
 	/**
 	 * Get settings section
 	 */
-	public function getSettingsSection() {
+	public function getSettingsSection(): string {
 		return $this->plugin_slug . '_main';
 	}
 
 	/**
 	 * Get AJAX check action
 	 */
-	public function getAjaxCheckAction() {
+	public function getAjaxCheckAction(): string {
 		return $this->ajax_check_action;
 	}
 
 	/**
 	 * Get AJAX update action
 	 */
-	public function getAjaxUpdateAction() {
+	public function getAjaxUpdateAction(): string {
 		return $this->ajax_update_action;
 	}
 
 	/**
 	 * Get AJAX test repo action
 	 */
-	public function getAjaxTestRepoAction() {
+	public function getAjaxTestRepoAction(): string {
 		return $this->ajax_test_repo_action;
 	}
 
 	/**
 	 * Get AJAX clear cache action
 	 */
-	public function getAjaxClearCacheAction() {
+	public function getAjaxClearCacheAction(): string {
 		return $this->ajax_clear_cache_action;
 	}
 
 	/**
 	 * Get nonce name
 	 */
-	public function getNonceName() {
+	public function getNonceName(): string {
 		return $this->nonce_name;
 	}
 
 	/**
 	 * Get text domain
 	 */
-	public function getTextDomain() {
+	public function getTextDomain(): string {
 		return $this->text_domain;
 	}
 
 	/**
 	 * Get script handle
 	 */
-	public function getScriptHandle() {
+	public function getScriptHandle(): string {
 		return $this->script_handle;
 	}
 
 	/**
 	 * Get style handle
 	 */
-	public function getStyleHandle() {
+	public function getStyleHandle(): string {
 		return $this->style_handle;
 	}
 
 	/**
 	 * Get asset prefix
 	 */
-	public function getAssetPrefix() {
+	public function getAssetPrefix(): string {
 		return $this->asset_prefix;
 	}
 
