@@ -33,7 +33,6 @@ biome.json
 .DS_Store
 Thumbs.db
 
-# Package management (keep vendor, exclude configs)
-composer.lock
+# Package management
 package.json
 package-lock.json

@@ -33,6 +33,6 @@
 *.zip export-ignore
 *.tar.gz export-ignore
 
-# Vendor (let Composer install dependencies instead)
-/vendor export-ignore
+# Note: We INCLUDE /vendor directory (with Composer autoloader) so the package works out-of-the-box
+# The vendor dir only contains Composer's autoloader (~76KB) since we have no runtime dependencies
 
