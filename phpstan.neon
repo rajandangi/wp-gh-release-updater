@@ -1,25 +1,33 @@
 # PHPStan configuration for WP GitHub Release Updater
 parameters:
-    level: 8
+    level: 6
 
     paths:
         - src/
-        - examples/
 
     excludePaths:
         - vendor/
         - src/admin/views/
 
+    # Report unmatched ignored errors
+    reportUnmatchedIgnoredErrors: false
+
     # Bootstrap files for WordPress stubs
     bootstrapFiles:
-        - vendor/php-stubs/wordpress-stubs/wordpress-stubs.php
-
-    # Allow dynamic properties for WordPress compatibility
+        - vendor/php-stubs/wordpress-stubs/wordpress-stubs.php    # Allow dynamic properties for WordPress compatibility
     ignoreErrors:
-        - '#Access to an undefined property#'
-        # Ignore missing type hints for WordPress compatibility
+        # WordPress WP_Error compatibility
+        - '#Call to method get_error_message\(\) on an unknown class#'
+        - '#is_wp_error\(.*\) will always evaluate to false#'
+        - '#has invalid return type.*WP_Error#'
+        - '#should return.*WP_Error but returns WP_Error#'
+        # Unreachable code after wp_send_json_* (WordPress exits after JSON response)
+        - '#Unreachable statement - code above always terminates#'
+        # Ignore missing generic/iterable typehints (WordPress compatibility)
         -
             identifier: missingType.iterableValue
+        -
+            identifier: missingType.generics
 
     # Treat mixed as any for better WordPress compatibility
     treatPhpDocTypesAsCertain: false

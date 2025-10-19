@@ -19,7 +19,6 @@ return static function (RectorConfig $rectorConfig): void {
   // Paths to refactor
   $rectorConfig->paths([
     __DIR__ . '/src',
-    __DIR__ . '/examples',
   ]);
 
   // Skip files/folders
