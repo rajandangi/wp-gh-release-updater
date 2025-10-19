@@ -6,6 +6,7 @@
 .gitignore
 .gitattributes
 .github
+.distignore
 
 # Development files
 tests/
@@ -20,6 +21,7 @@ phpcs.xml
 phpstan.neon
 rector.php
 biome.json
+.biomeignore
 
 # IDE files
 .idea/
@@ -31,8 +33,6 @@ biome.json
 .DS_Store
 Thumbs.db
 
-# Package management (keep vendor, exclude configs)
-composer.json
-composer.lock
+# Package management
 package.json
 package-lock.json
