@@ -21,6 +21,7 @@ phpcs.xml
 phpstan.neon
 rector.php
 biome.json
+.biomeignore
 
 # IDE files
 .idea/
@@ -33,7 +34,6 @@ biome.json
 Thumbs.db
 
 # Package management (keep vendor, exclude configs)
-composer.json
 composer.lock
 package.json
 package-lock.json

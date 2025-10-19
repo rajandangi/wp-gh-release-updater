@@ -16,11 +16,12 @@
 /rector.php export-ignore
 /biome.json export-ignore
 /composer.lock export-ignore
+/.biomeignore export-ignore
+/.distignore export-ignore
 
 # Documentation (optional - remove these lines if you want to include docs)
 /README.md export-ignore
 /CHANGELOG.md export-ignore
-/LICENSE export-ignore
 
 # Node.js files (if you have them)
 /package.json export-ignore
@@ -34,3 +35,4 @@
 
 # Vendor (let Composer install dependencies instead)
 /vendor export-ignore
+
