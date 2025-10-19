@@ -351,6 +351,30 @@ composer fix       # Fix all auto-fixable issues
 npm run biome:fix  # Fix JS/CSS issues
 ```
 
+## Release Process
+
+This package uses automated releases from the `release` branch:
+
+1. **Update Version**: Edit the `VERSION` file with the new version number (e.g., `1.2.3`)
+2. **Merge to Release Branch**: Merge or push your changes to the `release` branch
+3. **Automatic Process**:
+   - GitHub Actions will automatically:
+     - Create a git tag
+     - Install production dependencies (with `vendor/`)
+     - Create a production-ready ZIP file
+     - Create a GitHub release with the ZIP attached
+     - Update Packagist
+
+### Download Options
+
+**For Composer Users:**
+```bash
+composer require rajandangi/wp-gh-release-updater
+```
+
+**For Direct Download:**
+Download the production-ready ZIP file from the [Releases page](https://github.com/rajandangi/wp-gh-release-updater/releases). The ZIP includes all dependencies in the `vendor/` folder, ready to use.
+
 ## Contributing
 
 1. Fork the repository

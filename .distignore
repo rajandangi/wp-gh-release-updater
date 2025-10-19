@@ -1,0 +1,38 @@
+# Distribution ignore file
+# Files and directories listed here will NOT be included in release packages
+
+# Git files
+.git
+.gitignore
+.gitattributes
+.github
+
+# Development files
+tests/
+node_modules/
+*.zip
+*.tar.gz
+
+# Code quality tools
+.phpcs.cache
+.phpcs-cache
+phpcs.xml
+phpstan.neon
+rector.php
+biome.json
+
+# IDE files
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Package management (keep vendor, exclude configs)
+composer.json
+composer.lock
+package.json
+package-lock.json

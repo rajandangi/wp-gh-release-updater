@@ -61,6 +61,42 @@ jobs:
         if: steps.check_tag.outputs.exists == 'false'
         run: composer install --no-dev --prefer-dist --optimize-autoloader
 
+      - name: Create release package
+        if: steps.check_tag.outputs.exists == 'false'
+        run: |
+          echo "📦 Creating release package..."
+          PACKAGE_NAME="wp-gh-release-updater-${{ steps.version.outputs.version }}"
+
+          # Create temporary directory for package
+          mkdir -p "/tmp/$PACKAGE_NAME"
+
+          # Copy files to package directory (excluding dev files)
+          rsync -av --progress \
+            --exclude='.git*' \
+            --exclude='.github' \
+            --exclude='tests' \
+            --exclude='node_modules' \
+            --exclude='*.zip' \
+            --exclude='*.tar.gz' \
+            --exclude='.phpcs*' \
+            --exclude='phpcs.xml' \
+            --exclude='phpstan.neon' \
+            --exclude='rector.php' \
+            --exclude='biome.json' \
+            --exclude='.DS_Store' \
+            --exclude='composer.json' \
+            --exclude='composer.lock' \
+            --exclude='package.json' \
+            ./ "/tmp/$PACKAGE_NAME/"
+
+          # Create ZIP file
+          cd /tmp
+          zip -r "$PACKAGE_NAME.zip" "$PACKAGE_NAME"
+          mv "$PACKAGE_NAME.zip" "$GITHUB_WORKSPACE/"
+
+          echo "✅ Package created: $PACKAGE_NAME.zip"
+          ls -lh "$GITHUB_WORKSPACE/$PACKAGE_NAME.zip"
+
       - name: Create GitHub Release
         if: steps.check_tag.outputs.exists == 'false'
         uses: softprops/action-gh-release@v2
@@ -69,6 +105,8 @@ jobs:
           name: Release ${{ steps.version.outputs.version }}
           generate_release_notes: true
           draft: false
+          files: |
+            wp-gh-release-updater-${{ steps.version.outputs.version }}.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -107,9 +145,15 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 📦 Links" >> $GITHUB_STEP_SUMMARY
           echo "- [GitHub Release](https://github.com/rajandangi/wp-gh-release-updater/releases/tag/${{ steps.version.outputs.tag }})" >> $GITHUB_STEP_SUMMARY
+          echo "- [Download ZIP](https://github.com/rajandangi/wp-gh-release-updater/releases/download/${{ steps.version.outputs.tag }}/wp-gh-release-updater-${{ steps.version.outputs.version }}.zip)" >> $GITHUB_STEP_SUMMARY
           echo "- [Packagist Package](https://packagist.org/packages/rajandangi/wp-gh-release-updater)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📥 Installation" >> $GITHUB_STEP_SUMMARY
+          echo "### 📥 Installation Options" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Via Composer:**" >> $GITHUB_STEP_SUMMARY
           echo '```bash' >> $GITHUB_STEP_SUMMARY
           echo "composer require rajandangi/wp-gh-release-updater" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Direct Download:**" >> $GITHUB_STEP_SUMMARY
+          echo "Download the ZIP file from the release page (includes vendor dependencies)" >> $GITHUB_STEP_SUMMARY
