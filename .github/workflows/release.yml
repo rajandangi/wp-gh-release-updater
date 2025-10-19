@@ -79,13 +79,37 @@ jobs:
       - name: Trigger Packagist update
         if: steps.check_tag.outputs.exists == 'false'
         run: |
-          curl -XPOST -H'content-type:application/json' \
+          echo "🚀 Triggering Packagist update..."
+          RESPONSE=$(curl -w "\n%{http_code}" -XPOST -H'content-type:application/json' \
             'https://packagist.org/api/update-package?username=${{ secrets.PACKAGIST_USERNAME }}&apiToken=${{ secrets.PACKAGIST_API_TOKEN }}' \
-            -d'{"repository":{"url":"https://github.com/rajandangi/wp-gh-release-updater"}}'
+            -d'{"repository":{"url":"https://github.com/rajandangi/wp-gh-release-updater"}}')
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+
+          echo "Response: $BODY"
+          echo "HTTP Code: $HTTP_CODE"
+
+          if [ "$HTTP_CODE" -eq 200 ] || [ "$HTTP_CODE" -eq 202 ]; then
+            echo "✅ Packagist updated successfully!"
+          else
+            echo "⚠️  Packagist update may have failed (HTTP $HTTP_CODE)"
+            echo "Response: $BODY"
+          fi
 
       - name: Release summary
         if: steps.check_tag.outputs.exists == 'false'
         run: |
-          echo "✅ Released version ${{ steps.version.outputs.version }}"
-          echo "📦 Packagist: https://packagist.org/packages/rajandangi/wp-gh-release-updater"
-          echo "🏷️ Tag: ${{ steps.version.outputs.tag }}"
+          echo "## 🎉 Release Complete!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag:** ${{ steps.version.outputs.tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 Links" >> $GITHUB_STEP_SUMMARY
+          echo "- [GitHub Release](https://github.com/rajandangi/wp-gh-release-updater/releases/tag/${{ steps.version.outputs.tag }})" >> $GITHUB_STEP_SUMMARY
+          echo "- [Packagist Package](https://packagist.org/packages/rajandangi/wp-gh-release-updater)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📥 Installation" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          echo "composer require rajandangi/wp-gh-release-updater" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
