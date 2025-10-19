@@ -48,9 +48,7 @@ yarn-error.log*
 
 # Node modules and package lock
 /node_modules/
-package-lock.json
 
 # Biome cache
 .biome/
-package-lock.json
 yarn.lock
