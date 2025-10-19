@@ -124,41 +124,7 @@ Complete isolation between multiple plugins guaranteed!
  */
 ```
 
-**2. Release Process:**
-
-```bash
-# 1. Update version in plugin header
-# 2. Commit and tag
-git tag v1.2.3
-git push origin v1.2.3
-
-# 3. Build plugin ZIP (include vendor/)
-composer install --no-dev --optimize-autoloader
-zip -r my-plugin.zip . -x "*.git*" "*node_modules*" "*tests*"
-
-# 4. Create GitHub release and upload my-plugin.zip
-```
-
-**3. Build Script Example:**
-
-```bash
-#!/bin/bash
-VERSION="1.0.0"
-PLUGIN_SLUG="my-plugin"
-
-composer install --no-dev --optimize-autoloader
-
-zip -r "${PLUGIN_SLUG}.zip" . \
-  -x "*.git*" \
-  -x "*node_modules*" \
-  -x "*.github*" \
-  -x "*tests*" \
-  -x "*.phpcs.xml*"
-
-echo "✓ Built ${PLUGIN_SLUG}.zip for version ${VERSION}"
-```
-
-### Automated Releases with GitHub Actions
+**2. Automate Releases with GitHub Actions:**
 
 Automate your release process by adding this workflow to your plugin repository:
 
@@ -277,13 +243,6 @@ git commit -m "Bump version to 1.2.3"
 
 # 3. Push to release branch (triggers automatic build)
 git push origin main:release
-
-# GitHub Actions will automatically:
-# - Extract version from plugin header
-# - Install production dependencies
-# - Create plugin ZIP file
-# - Create git tag (v1.2.3)
-# - Create GitHub release with ZIP attached
 ```
 
 **What the workflow does:**
