@@ -4,7 +4,6 @@
 
     <!-- What to scan -->
     <file>src/</file>
-    <file>examples/</file>
 
     <!-- Exclude patterns -->
     <exclude-pattern>*/vendor/*</exclude-pattern>
