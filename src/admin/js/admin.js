@@ -217,6 +217,9 @@ document.addEventListener('DOMContentLoaded', () => {
 				if (result.success) {
 					showMessage(result.message, 'success');
 
+					// Disable the clear cache button since there's no cache now
+					clearCacheButton.disabled = true;
+
 					// Update cache status message
 					const cacheStatusMessage = document.getElementById('cache-status-message');
 					if (cacheStatusMessage) {
@@ -227,11 +230,9 @@ document.addEventListener('DOMContentLoaded', () => {
 						// After 3 seconds, hide the message completely since there's no cache
 						setTimeout(() => {
 							cacheStatusMessage.style.display = 'none';
+							location.reload();
 						}, 3000);
 					}
-
-					// Disable the clear cache button since there's no cache now
-					clearCacheButton.disabled = true;
 				} else {
 					showMessage(result.message, 'error');
 				}
