@@ -127,11 +127,9 @@ class Updater {
 				'tag_name'     => $release_data['tag_name'],
 				'published_at' => $release_data['published_at'] ?? '',
 				'assets'       => $release_data['assets'] ?? array(),
-				'zipball_url'  => $release_data['zipball_url'] ?? '',
 				'html_url'     => $release_data['html_url'] ?? '',
 			);
 			$this->config->updateOption( 'release_snapshot', $release_snapshot );
-
 			$this->logAction( 'Check', 'Success', $result['message'] );
 
 		} catch ( \Exception $e ) {
@@ -183,40 +181,12 @@ class Updater {
 				return $result;
 			}
 
-			// Get fresh release data to check if version changed
-			$current_release_data = $this->github_api->getLatestRelease();
-
-			if ( is_wp_error( $current_release_data ) ) {
-				delete_transient( $lock_key );
-				$result['message'] = 'Failed to verify release data: ' . $current_release_data->get_error_message();
-				$this->logAction( 'Download', 'Failure', $result['message'] );
-				return $result;
-			}
-
-			// Extract current version and compare with snapshot
-			$current_latest_version = $this->extractVersionFromTag( $current_release_data['tag_name'] );
-
-			// Check for race condition: version changed since last check
-			if ( $current_latest_version !== $release_snapshot['version'] ) {
-				delete_transient( $lock_key );
-				$result['message'] = sprintf(
-					'Warning: Release version changed from %s to %s since last check. Please re-check for updates before proceeding.',
-					$release_snapshot['version'],
-					$current_latest_version
-				);
-				$this->logAction( 'Download', 'Failure', $result['message'] );
-				// Clear outdated snapshot
-				$this->clearUpdateCache();
-				return $result;
-			}
-
-			// Use snapshot data instead of fresh data to ensure consistency
+			// Use snapshot data directly - no need to fetch fresh data
+			// The snapshot was already validated during check
 			$release_data = $release_snapshot;
 
-			// Resolve package URL (GitHub asset or zipball)
-			$package_url = $this->findDownloadAsset( $release_data );
-
-			if ( empty( $package_url ) ) {
+			// Resolve package URL from GitHub assets
+			$package_url = $this->findDownloadAsset( $release_data );           if ( empty( $package_url ) ) {
 				delete_transient( $lock_key );
 				$result['message'] = 'No suitable download asset found in the release.';
 				$this->logAction( 'Download', 'Failure', $result['message'] );
