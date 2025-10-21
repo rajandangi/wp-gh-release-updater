@@ -659,7 +659,7 @@ class Config {
 
 		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Used for decryption, not code obfuscation
 		$decoded = base64_decode( $encrypted_data, true );
-		if ( ! $decoded || ! strpos( $decoded, '::' ) ) {
+		if ( ! $decoded || false === strpos( $decoded, '::' ) ) {
 			return '';
 		}
 
