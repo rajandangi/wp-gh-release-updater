@@ -7,9 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2025-10-24
+
+### Added
+- "Check for Updates" action link on plugins page for manual update checks
+- Pure vanilla JavaScript (no jQuery dependency)
+- Visual feedback with loading states and success/error messages
+
 ### Fixed
-- Fixed "The plugin is at the latest version" error when clicking "Update now" button. The plugin now properly injects update information into WordPress's update transient via the `site_transient_update_plugins` filter, ensuring WordPress can correctly detect and install available updates.
-- Fixed plugin reactivation after update. The plugin now properly stores the active status before update and ensures reactivation after successful update completion.
+- Update detection reliability - properly injects update data into WordPress transient
+- "Plugin is at the latest version" error when clicking "Update now"
+
+### Changed
+- Complete architecture refactoring - separated admin and core update logic
+- Simplified to WordPress-standard update flow (no custom reactivation)
+- Admin page now shows only GitHub authentication settings
+- Removed plugin status section (check updates from plugins page instead)
 
 ## [1.0.0] - 2025-10-18
 - Initial release of WP GitHub Updater Manager
@@ -20,5 +33,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Report bugs**: [GitHub Issues](https://github.com/rajandangi/wp-github-updater-manager/issues)
 - **Request features**: [GitHub Discussions](https://github.com/rajandangi/wp-github-updater-manager/discussions)
 
-[Unreleased]: https://github.com/rajandangi/wp-github-updater-manager/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/rajandangi/wp-github-updater-manager/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/rajandangi/wp-github-updater-manager/compare/v1.0.0...v1.2.0
 [1.0.0]: https://github.com/rajandangi/wp-github-updater-manager/releases/tag/v1.0.0

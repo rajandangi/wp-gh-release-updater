@@ -61,11 +61,16 @@ class Admin {
 		add_action( 'admin_menu', array( $this, 'addAdminMenu' ) );
 		add_action( 'admin_init', array( $this, 'registerSettings' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueueScripts' ) );
-		add_action( 'wp_ajax_' . $this->config->getAjaxCheckAction(), array( $this, 'ajaxCheckForUpdates' ) );
-		add_action( 'wp_ajax_' . $this->config->getAjaxUpdateAction(), array( $this, 'ajaxPerformUpdate' ) );
-		add_action( 'wp_ajax_' . $this->config->getAjaxTestRepoAction(), array( $this, 'ajaxTestRepository' ) );
-		add_action( 'wp_ajax_' . $this->config->getAjaxClearCacheAction(), array( $this, 'ajaxClearCache' ) );
 		add_action( 'admin_notices', array( $this, 'showAdminNotices' ) );
+
+		// Plugin action links on plugins page
+		$plugin_basename = $this->config->getPluginBasename();
+		add_filter( 'plugin_action_links_' . $plugin_basename, array( $this, 'addPluginActionLinks' ) );
+		add_filter( 'network_admin_plugin_action_links_' . $plugin_basename, array( $this, 'addPluginActionLinks' ) );
+
+		// AJAX handlers
+		add_action( 'wp_ajax_' . $this->config->getPluginSlug() . '_check_updates_quick', array( $this, 'ajaxQuickCheckForUpdates' ) );
+		add_action( 'wp_ajax_' . $this->config->getAjaxTestRepoAction(), array( $this, 'ajaxTestRepository' ) );
 	}
 
 	/**
@@ -138,7 +143,19 @@ class Admin {
 	 * @param string $hook Current admin page hook
 	 */
 	public function enqueueScripts( $hook ): void {
-		// Determine the menu parent prefix for the page hook
+		// Enqueue plugins page script (for "Check for Updates" link)
+		if ( 'plugins.php' === $hook ) {
+			wp_enqueue_script(
+				$this->config->getPluginSlug() . '-plugins-page',
+				$this->config->getUpdaterUrl() . 'admin/js/plugins-page.js',
+				array(),
+				$this->config->getPluginVersion(),
+				true
+			);
+			return;
+		}
+
+		// Enqueue settings page scripts
 		$menu_parent_prefix = str_replace( '.php', '', $this->config->getMenuParent() );
 		$expected_hook      = $menu_parent_prefix . '_page_' . $this->config->getSettingsPageSlug();
 
@@ -146,19 +163,19 @@ class Admin {
 			return;
 		}
 
+		wp_enqueue_style(
+			$this->config->getStyleHandle(),
+			$this->config->getUpdaterUrl() . 'admin/css/admin.css',
+			array(),
+			$this->config->getPluginVersion()
+		);
+
 		wp_enqueue_script(
 			$this->config->getScriptHandle(),
 			$this->config->getUpdaterUrl() . 'admin/js/admin.js',
 			array(),
 			$this->config->getPluginVersion(),
 			true
-		);
-
-		wp_enqueue_style(
-			$this->config->getStyleHandle(),
-			$this->config->getUpdaterUrl() . 'admin/css/admin.css',
-			array(),
-			$this->config->getPluginVersion()
 		);
 
 		// Localize script for AJAX
@@ -169,10 +186,7 @@ class Admin {
 				'ajaxUrl' => admin_url( 'admin-ajax.php' ),
 				'nonce'   => wp_create_nonce( $this->config->getNonceName() ),
 				'actions' => array(
-					'check'      => $this->config->getAjaxCheckAction(),
-					'update'     => $this->config->getAjaxUpdateAction(),
-					'testRepo'   => $this->config->getAjaxTestRepoAction(),
-					'clearCache' => $this->config->getAjaxClearCacheAction(),
+					'testRepo' => $this->config->getAjaxTestRepoAction(),
 				),
 				'strings' => array(
 					'checking'       => 'Checking for updates...',
@@ -270,39 +284,6 @@ class Admin {
 	}
 
 	/**
-	 * AJAX handler for checking updates
-	 */
-	public function ajaxCheckForUpdates(): void {
-		// Verify nonce and permissions
-		$nonce = isset( $_POST['nonce'] ) ? sanitize_text_field( wp_unslash( $_POST['nonce'] ) ) : '';
-		if ( ! wp_verify_nonce( $nonce, $this->config->getNonceName() ) || ! current_user_can( $this->config->getCapability() ) ) {
-			wp_die( 'Security check failed' );
-		}
-
-		// Reload GitHub API configuration
-		$this->github_api->__construct( $this->config );
-
-		$result = $this->updater->checkForUpdates();
-
-		wp_send_json( $result );
-	}
-
-	/**
-	 * AJAX handler for performing update
-	 */
-	public function ajaxPerformUpdate(): void {
-		// Verify nonce and permissions
-		$nonce = isset( $_POST['nonce'] ) ? sanitize_text_field( wp_unslash( $_POST['nonce'] ) ) : '';
-		if ( ! wp_verify_nonce( $nonce, $this->config->getNonceName() ) || ! current_user_can( $this->config->getCapability() ) ) {
-			wp_die( 'Security check failed' );
-		}
-
-		$result = $this->updater->performUpdate();
-
-		wp_send_json( $result );
-	}
-
-	/**
 	 * AJAX handler for testing repository access
 	 */
 	public function ajaxTestRepository(): void {
@@ -356,28 +337,6 @@ class Admin {
 				)
 			);
 		}
-	}
-
-	/**
-	 * AJAX handler for clearing GitHub API cache
-	 */
-	public function ajaxClearCache(): void {
-		// Verify nonce and permissions
-		$nonce = isset( $_POST['nonce'] ) ? sanitize_text_field( wp_unslash( $_POST['nonce'] ) ) : '';
-		if ( ! wp_verify_nonce( $nonce, $this->config->getNonceName() ) || ! current_user_can( $this->config->getCapability() ) ) {
-			wp_die( 'Security check failed' );
-		}
-
-		// Clear the GitHub API cache
-		$this->github_api->clearCache();
-
-		wp_send_json(
-			array(
-				'success'        => true,
-				'message'        => 'GitHub API cache cleared successfully!',
-				'has_cache_data' => false,
-			)
-		);
 	}
 
 	/**
@@ -485,5 +444,58 @@ class Admin {
 		}
 
 		return 'badge-success';
+	}
+
+	/**
+	 * Add "Check for Updates" action link on plugins page
+	 *
+	 * @param array $links Existing plugin action links
+	 * @return array Modified links
+	 */
+	public function addPluginActionLinks( $links ) {
+		$check_updates_link = sprintf(
+			'<a href="#" class="%s-check-updates" data-plugin="%s" data-nonce="%s">%s</a>',
+			esc_attr( $this->config->getPluginSlug() ),
+			esc_attr( $this->config->getPluginBasename() ),
+			esc_attr( wp_create_nonce( $this->config->getPluginSlug() . '_check_updates_quick' ) ),
+			esc_html__( 'Check for Updates', 'default' )
+		);
+
+		// Add as first link (before Deactivate)
+		return array_merge( array( 'check_updates' => $check_updates_link ), $links );
+	}
+
+	/**
+	 * Handle quick update check from plugins page (AJAX)
+	 *
+	 * @return void
+	 */
+	public function ajaxQuickCheckForUpdates() {
+		// Verify nonce
+		check_ajax_referer( $this->config->getPluginSlug() . '_check_updates_quick', 'nonce' );
+
+		// Check permissions
+		if ( ! current_user_can( 'update_plugins' ) ) {
+			wp_send_json_error( array( 'message' => 'Insufficient permissions.' ) );
+		}
+
+		// Clear cache first
+		$this->github_api->clearCache();
+		delete_site_transient( 'update_plugins' );
+
+		// Perform update check
+		$result = $this->updater->checkForUpdates();
+
+		if ( $result['success'] ) {
+			wp_send_json_success(
+				array(
+					'message'          => $result['message'],
+					'update_available' => $result['update_available'],
+					'latest_version'   => $result['latest_version'],
+				)
+			);
+		} else {
+			wp_send_json_error( array( 'message' => $result['message'] ) );
+		}
 	}
 }

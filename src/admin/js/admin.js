@@ -1,13 +1,11 @@
 /**
  * Admin JavaScript for WP GitHub Release Updater
- * Vanilla JavaScript implementation - no jQuery dependency
+ * Handles repository testing functionality
+ * Pure vanilla JavaScript - no jQuery dependency
  */
 
 document.addEventListener('DOMContentLoaded', () => {
-	const checkButton = document.getElementById('check-for-updates');
-	const updateButton = document.getElementById('update-now');
 	const testButton = document.getElementById('test-repository');
-	const clearCacheButton = document.getElementById('clear-cache');
 	const messagesContainer = document.getElementById('wp-github-updater-messages');
 
 	/**
@@ -71,118 +69,6 @@ document.addEventListener('DOMContentLoaded', () => {
 			});
 	}
 
-	// Check for updates button handler
-	if (checkButton) {
-		checkButton.addEventListener('click', () => {
-			setButtonLoading(checkButton, true);
-
-			makeAjaxRequest(wpGitHubUpdater.actions.check).then((result) => {
-				setButtonLoading(checkButton, false);
-
-				if (result.success) {
-					showMessage(result.message, 'success');
-
-					// Update UI elements
-					const latestVersionCell = document.querySelector(
-						'.wp-github-updater-status-table tr:nth-child(2) td:nth-child(2)'
-					);
-					const statusBadge = document.querySelector('.wp-github-updater-status-badge');
-
-					if (latestVersionCell) {
-						latestVersionCell.textContent = result.latest_version;
-					}
-
-					if (statusBadge) {
-						statusBadge.textContent = result.message;
-						statusBadge.className =
-							'wp-github-updater-status-badge ' +
-							(result.update_available ? 'badge-info' : 'badge-success');
-					}
-
-					// Enable/disable update button
-					if (updateButton) {
-						updateButton.disabled = !result.update_available;
-					}
-
-					// Update last checked time
-					const lastCheckedCell = document.querySelector(
-						'.wp-github-updater-status-table tr:nth-child(4) td:nth-child(2)'
-					);
-					if (lastCheckedCell) {
-						lastCheckedCell.textContent = 'Just now';
-					}
-
-					// Show cache message since we just cached data
-					const cacheStatusMessage = document.getElementById('cache-status-message');
-					if (cacheStatusMessage) {
-						cacheStatusMessage.innerHTML =
-							'<small><em>GitHub API responses are cached for 1 minute to prevent rate limiting.</em></small>';
-						cacheStatusMessage.style.display = 'block';
-					}
-
-					// Enable clear cache button since we just created cache
-					if (clearCacheButton) {
-						clearCacheButton.disabled = false;
-					}
-				} else {
-					showMessage(result.message, 'error');
-				}
-			});
-		});
-	}
-
-	// Update now button handler
-	if (updateButton) {
-		updateButton.addEventListener('click', () => {
-			if (!confirm(wpGitHubUpdater.strings.confirm_update)) {
-				return;
-			}
-
-			setButtonLoading(updateButton, true);
-
-			makeAjaxRequest(wpGitHubUpdater.actions.update).then((result) => {
-				if (result.success && result.redirect_url) {
-					// Redirect immediately to WordPress update screen
-					window.location.href = result.redirect_url;
-				} else if (result.success) {
-					setButtonLoading(updateButton, false);
-					showMessage(result.message, 'success');
-
-					// Update current version display
-					const currentVersionCell = document.querySelector(
-						'.wp-github-updater-status-table tr:nth-child(1) td:nth-child(2)'
-					);
-					const latestVersionCell = document.querySelector(
-						'.wp-github-updater-status-table tr:nth-child(2) td:nth-child(2)'
-					);
-					const statusBadge = document.querySelector('.wp-github-updater-status-badge');
-
-					if (currentVersionCell && latestVersionCell) {
-						currentVersionCell.textContent = latestVersionCell.textContent;
-					}
-
-					if (statusBadge) {
-						statusBadge.textContent = 'Plugin is up to date';
-						statusBadge.className = 'wp-github-updater-status-badge badge-success';
-					}
-
-					// Disable update button
-					updateButton.disabled = true;
-
-					// Suggest page reload
-					setTimeout(() => {
-						if (confirm('Update completed successfully. Reload the page to see all changes?')) {
-							location.reload();
-						}
-					}, 2000);
-				} else {
-					setButtonLoading(updateButton, false);
-					showMessage(result.message, 'error');
-				}
-			});
-		});
-	}
-
 	// Test repository access button handler
 	if (testButton) {
 		testButton.addEventListener('click', () => {
@@ -203,48 +89,6 @@ document.addEventListener('DOMContentLoaded', () => {
 					showMessage(result.message, 'error');
 				}
 			});
-		});
-	}
-
-	// Clear cache button handler
-	if (clearCacheButton) {
-		clearCacheButton.addEventListener('click', () => {
-			setButtonLoading(clearCacheButton, true);
-
-			makeAjaxRequest(wpGitHubUpdater.actions.clearCache).then((result) => {
-				setButtonLoading(clearCacheButton, false);
-
-				if (result.success) {
-					showMessage(result.message, 'success');
-
-					// Disable the clear cache button since there's no cache now
-					clearCacheButton.disabled = true;
-
-					// Update cache status message
-					const cacheStatusMessage = document.getElementById('cache-status-message');
-					if (cacheStatusMessage) {
-						// Show success message temporarily
-						cacheStatusMessage.innerHTML =
-							'<small><em style="color: #46b450; font-weight: 600;">✓ Cache cleared! Fresh data will be fetched on next check.</em></small>';
-
-						// After 3 seconds, hide the message completely since there's no cache
-						setTimeout(() => {
-							cacheStatusMessage.style.display = 'none';
-							location.reload();
-						}, 3000);
-					}
-				} else {
-					showMessage(result.message, 'error');
-				}
-			});
-		});
-	}
-
-	// Auto-enable check button when repository is configured
-	const repositoryUrlField = document.getElementById('repository_url');
-	if (repositoryUrlField && checkButton) {
-		repositoryUrlField.addEventListener('input', function () {
-			checkButton.disabled = !this.value.trim();
 		});
 	}
 

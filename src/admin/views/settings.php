@@ -17,75 +17,14 @@ $plugin_status = $this->getPluginStatus();
 	<h1><?php echo esc_html( $this->config->getPageTitle() ); ?></h1>
 
 	<div class="wp-github-updater-container">
-		<!-- Status Card -->
-		<div class="card">
-			<h2 class="title">Plugin Status</h2>
-			<table class="wp-github-updater-status-table">
-				<tr>
-					<td><strong>Current Version:</strong></td>
-					<td><?php echo esc_html( $plugin_status['current_version'] ); ?></td>
-				</tr>
-				<tr>
-					<td><strong>Latest Version:</strong></td>
-					<td>
-						<?php if ( ! empty( $plugin_status['latest_version'] ) ) : ?>
-							<?php echo esc_html( $plugin_status['latest_version'] ); ?>
-						<?php else : ?>
-							<em>Unknown</em>
-						<?php endif; ?>
-					</td>
-				</tr>
-				<tr>
-					<td><strong>Status:</strong></td>
-					<td>
-						<span class="wp-github-updater-status-badge <?php echo esc_attr( $this->getStatusBadgeClass( $plugin_status ) ); ?>">
-							<?php echo esc_html( $this->getStatusMessage( $plugin_status ) ); ?>
-						</span>
-					</td>
-				</tr>
-				<tr>
-					<td><strong>Last Checked:</strong></td>
-					<td><?php echo esc_html( $this->formatTimestamp( $plugin_status['last_checked'] ) ); ?></td>
-				</tr>
-			</table>
-
-			<!-- Warning Notice -->
-			<div class="notice notice-warning inline" style="margin: 15px 0;">
-				<p><strong>⚠️ Important:</strong> Make sure to check for updates before clicking "Update Now". The information shown above is cached to minimize unnecessary API calls.</p>
-			</div>
-
-			<!-- Action Buttons -->
-			<div class="wp-github-updater-actions">
-				<button type="button" id="check-for-updates" class="button button-secondary" <?php echo ! $plugin_status['repository_configured'] ? 'disabled' : ''; ?>>
-					<span class="button-text">Check for Updates</span>
-					<span class="spinner"></span>
-				</button>
-
-				<button type="button" id="update-now" class="button button-primary" <?php echo ! $plugin_status['update_available'] ? 'disabled' : ''; ?>>
-					<span class="button-text">Update Now</span>
-					<span class="spinner"></span>
-				</button>
-
-				<button type="button" id="clear-cache" class="button button-secondary" <?php echo ! $plugin_status['has_cached_data'] ? 'disabled' : ''; ?>>
-					<span class="button-text">Clear Cache</span>
-					<span class="spinner"></span>
-				</button>
-			</div>
-
-			<!-- Status Messages -->
-			<div id="wp-github-updater-messages"></div>
-
-			<!-- Cache Info -->
-			<div class="wp-github-updater-cache-info">
-				<?php if ( $plugin_status['has_cached_data'] ) : ?>
-				<p id="cache-status-message"><small><em>GitHub API responses are cached for 1 minute to prevent rate limiting.</em></small></p>
-				<?php endif; ?>
-			</div>
+		<!-- Notice -->
+		<div class="notice notice-info inline">
+			<p><strong>💡 Tip:</strong> You can check for updates directly from the Plugins page using the "Check for Updates" link.</p>
 		</div>
 
 		<!-- Settings Form -->
 		<div class="card">
-			<h2 class="title">Repository Configuration</h2>
+			<h2 class="title">GitHub Authentication</h2>
 
 			<form method="post" action="options.php" id="wp-github-updater-settings-form">
 				<?php
@@ -114,30 +53,18 @@ $plugin_status = $this->getPluginStatus();
 				</table>
 
 				<div class="wp-github-updater-settings-actions">
-					<?php submit_button( 'Save Settings', 'secondary', 'submit', false ); ?>
+					<?php submit_button( 'Save Settings', 'primary', 'submit', false ); ?>
 
 					<button type="button" id="test-repository" class="button button-secondary">
 						<span class="button-text">Test Repository Access</span>
 						<span class="spinner"></span>
 					</button>
 				</div>
+
+				<!-- Status Messages -->
+				<div id="wp-github-updater-messages"></div>
 			</form>
 		</div>
-
-		<!-- Activity Log -->
-		<?php if ( ! empty( $plugin_status['last_log'] ) ) : ?>
-		<div class="card">
-			<h2 class="title">Recent Activity</h2>
-			<div class="wp-github-updater-log">
-				<div class="log-entry <?php echo $plugin_status['last_log']['result'] === 'Success' ? 'success' : 'error'; ?>">
-					<div class="log-timestamp"><?php echo esc_html( $plugin_status['last_log']['timestamp'] ); ?></div>
-					<div class="log-action"><?php echo esc_html( $plugin_status['last_log']['action'] ); ?></div>
-					<div class="log-result"><?php echo esc_html( $plugin_status['last_log']['result'] ); ?></div>
-					<div class="log-message"><?php echo esc_html( $plugin_status['last_log']['message'] ); ?></div>
-				</div>
-			</div>
-		</div>
-		<?php endif; ?>
 
 	</div>
 </div>
