@@ -223,7 +223,7 @@ class Admin {
 		$value     = $has_token ? '****************************************' : '';
 
 		echo '<input type="password" id="access_token" name="' . esc_attr( $this->config->getOptionName( 'access_token' ) ) . '" value="' . esc_attr( $value ) . '" class="regular-text" placeholder="ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" autocomplete="off" />';
-		echo '<p class="description">GitHub Personal Access Token (optional, required for private repos).</p>';
+		echo '<p class="description"><strong>Required for private repositories.</strong> GitHub Personal Access Token with <code>repo</code> scope. <strong>Highly recommended for public repositories</strong> to avoid API rate limits (60 requests/hour without token, 5000 with token).</p>';
 	}
 
 	/**
