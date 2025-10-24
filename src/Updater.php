@@ -58,6 +58,9 @@ class Updater {
 		// Hook into upgrader pre-download to ensure auth is active
 		add_filter( 'upgrader_pre_download', array( $this, 'enableAuthForDownload' ), 10, 3 );
 
+		// Store active status before update
+		add_action( 'upgrader_pre_install', array( $this, 'storeActiveStatus' ), 10, 2 );
+
 		// Clear update cache after successful plugin upgrade
 		add_action( 'upgrader_process_complete', array( $this, 'clearCacheAfterUpdate' ), 10, 2 );
 	}
@@ -646,6 +649,32 @@ class Updater {
 	}
 
 	/**
+	 * Store plugin active status before update
+	 * This runs before the plugin is deactivated during update
+	 *
+	 * @param bool  $return Installation response (true on success, false on failure)
+	 * @param array $hook_extra Extra arguments passed to the hook
+	 * @return bool Unmodified return value
+	 */
+	public function storeActiveStatus( $return, $hook_extra ) {
+		// Check if this is a plugin update
+		if ( ! isset( $hook_extra['plugin'] ) ) {
+			return $return;
+		}
+
+		$plugin_basename = $this->config->getPluginBasename();
+
+		// Check if this is our plugin being updated
+		if ( $hook_extra['plugin'] === $plugin_basename ) {
+			// Store the active status in a transient (expires in 1 hour as safety)
+			$was_active = is_plugin_active( $plugin_basename );
+			set_transient( 'plugin_was_active_' . md5( $plugin_basename ), $was_active, HOUR_IN_SECONDS );
+		}
+
+		return $return;
+	}
+
+	/**
 	 * Clear cache after WordPress completes plugin update
 	 *
 	 * @param \WP_Upgrader $upgrader WordPress upgrader instance
@@ -676,7 +705,25 @@ class Updater {
 			// Clear GitHub API cache after successful update
 			$this->github_api->clearCache();
 
-			$this->logAction( 'Update', 'Success', 'Plugin updated successfully. Cache cleared.' );
+			// Check if plugin was active before update and reactivate if needed
+			$was_active_key = 'plugin_was_active_' . md5( $plugin_basename );
+			$was_active     = get_transient( $was_active_key );
+
+			if ( $was_active && ! is_plugin_active( $plugin_basename ) ) {
+				// Reactivate the plugin
+				$result = activate_plugin( $plugin_basename, '', is_network_admin(), true );
+
+				if ( ! is_wp_error( $result ) ) {
+					$this->logAction( 'Update', 'Success', 'Plugin updated and reactivated successfully.' );
+				} else {
+					$this->logAction( 'Update', 'Warning', 'Plugin updated but reactivation failed: ' . $result->get_error_message() );
+				}
+			} else {
+				$this->logAction( 'Update', 'Success', 'Plugin updated successfully. Cache cleared.' );
+			}
+
+			// Clean up the transient
+			delete_transient( $was_active_key );
 		}
 	}
 }
