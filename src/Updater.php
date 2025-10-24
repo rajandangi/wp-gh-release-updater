@@ -49,14 +49,17 @@ class Updater {
 		$this->github_api      = $github_api;
 		$this->current_version = $config->getPluginVersion();
 
+		// Hook into WordPress update transient to inject update information
+		add_filter( 'site_transient_update_plugins', array( $this, 'injectUpdateInfo' ), 10, 1 );
+
 		// Hook into WordPress update transient to inject auth when needed
 		add_filter( 'pre_set_site_transient_update_plugins', array( $this, 'enableAuthForUpdate' ), 10, 1 );
 
 		// Hook into upgrader pre-download to ensure auth is active
 		add_filter( 'upgrader_pre_download', array( $this, 'enableAuthForDownload' ), 10, 3 );
 
-		// Clear update cache after successful plugin upgrade
-		add_action( 'upgrader_process_complete', array( $this, 'clearCacheAfterUpdate' ), 10, 2 );
+		// Clear update cache after successful plugin upgrade (priority 5 for better compatibility)
+		add_action( 'upgrader_process_complete', array( $this, 'clearCacheAfterUpdate' ), 5, 2 );
 	}
 
 	/**
@@ -144,6 +147,93 @@ class Updater {
 	}
 
 	/**
+	 * Inject update information into WordPress update transient
+	 * This allows WordPress to see the update and enable the "Update now" button
+	 *
+	 * Manual check approach: Only injects data that was manually checked by user
+	 * But ensures it's ALWAYS available when WordPress checks the transient
+	 *
+	 * @param object|false $transient Update plugins transient
+	 * @return object|false Modified transient
+	 */
+	public function injectUpdateInfo( $transient ) {
+		// If transient is not an object, return as-is
+		if ( ! is_object( $transient ) ) {
+			return $transient;
+		}
+
+		// Ensure response array exists
+		if ( ! isset( $transient->response ) ) {
+			$transient->response = array();
+		}
+
+		// Ensure no_update array exists
+		if ( ! isset( $transient->no_update ) ) {
+			$transient->no_update = array();
+		}
+
+		$plugin_basename = $this->config->getPluginBasename();
+
+		// Get stored update information (from manual check)
+		$latest_version   = $this->config->getOption( 'latest_version', '' );
+		$update_available = $this->config->getOption( 'update_available', false );
+		$release_snapshot = $this->config->getOption( 'release_snapshot', array() );
+
+		// CRITICAL: Only inject if we have data AND it's valid
+		// This ensures we don't inject stale or incorrect data
+		if ( ! empty( $latest_version ) && ! empty( $release_snapshot ) ) {
+			// Verify the version is actually newer than current
+			if ( $update_available && $this->isUpdateAvailable( $this->current_version, $latest_version ) ) {
+				// Get the download URL from the release snapshot
+				$package_url = $this->findDownloadAsset( $release_snapshot );
+
+				if ( ! empty( $package_url ) ) {
+					$repo_url = $this->config->getOption( 'repository_url', 'https://github.com' );
+
+					// Inject into response array - this shows the update notification
+					$transient->response[ $plugin_basename ] = (object) array(
+						'slug'         => $this->config->getPluginSlug(),
+						'plugin'       => $plugin_basename,
+						'new_version'  => $latest_version,
+						'package'      => $package_url,
+						'url'          => $repo_url,
+						'tested'       => get_bloginfo( 'version' ),
+						'requires'     => '6.0',
+						'requires_php' => '7.4',
+						'icons'        => array(),
+						'banners'      => array(),
+					);
+
+					// Remove from no_update if it exists there
+					if ( isset( $transient->no_update[ $plugin_basename ] ) ) {
+						unset( $transient->no_update[ $plugin_basename ] );
+					}
+				}
+			} else {
+				// No update available OR current version >= latest version
+				// Add to no_update array to prevent "compatibility unknown" warning
+				$transient->no_update[ $plugin_basename ] = (object) array(
+					'slug'         => $this->config->getPluginSlug(),
+					'plugin'       => $plugin_basename,
+					'new_version'  => $this->current_version,
+					'url'          => $this->config->getOption( 'repository_url', 'https://github.com' ),
+					'package'      => '',
+					'tested'       => get_bloginfo( 'version' ),
+					'requires'     => '6.0',
+					'requires_php' => '7.4',
+				);
+
+				// Remove from response if it exists there (in case of version rollback)
+				if ( isset( $transient->response[ $plugin_basename ] ) ) {
+					unset( $transient->response[ $plugin_basename ] );
+				}
+			}
+		}
+
+		return $transient;
+	}
+
+	/**
 	 * Perform plugin update
 	 *
 	 * @return array Update result
@@ -196,8 +286,10 @@ class Updater {
 				return $result;
 			}
 
-			// Register this as an available update in the core update transient
-			$this->registerCoreUpdate( $latest_version, $package_url );         // Build the WordPress native update URL with fresh nonce
+			// No need to manually register update - it's now injected via the injectUpdateInfo filter
+			// This ensures the update is always available when WordPress checks the transient
+
+			// Build the WordPress native update URL with fresh nonce
 			$plugin_basename = $this->config->getPluginBasename();
 			$update_url      = add_query_arg(
 				array(
@@ -275,43 +367,6 @@ class Updater {
 		}
 
 		return $reply;
-	}
-
-	/**
-	 * Register/update the core plugin update transient so WordPress knows
-	 * about the new version and package URL. This allows the default updater
-	 * to handle the installation just like an official update.
-	 *
-	 * @param string $new_version New version string
-	 * @param string $package_url Download URL for the zip package
-	 * @return void
-	 */
-	private function registerCoreUpdate( $new_version, $package_url ) {
-		$transient = get_site_transient( 'update_plugins' );
-
-		if ( ! is_object( $transient ) ) {
-			$transient = new \stdClass();
-		}
-
-		if ( ! isset( $transient->response ) || ! is_array( $transient->response ) ) {
-			$transient->response = array();
-		}
-
-		// Best-effort URL to the repo for details
-		$repo_url = $this->config->getOption( 'repository_url', 'https://github.com' );
-
-		$plugin_basename = $this->config->getPluginBasename();
-
-		$transient->response[ $plugin_basename ] = (object) array(
-			'slug'        => $this->config->getPluginSlug(),
-			'plugin'      => $plugin_basename,
-			'new_version' => $new_version,
-			'package'     => $package_url,
-			'url'         => $repo_url,
-		);
-
-		$transient->last_checked = time();
-		set_site_transient( 'update_plugins', $transient );
 	}
 
 	/**
@@ -587,7 +642,39 @@ class Updater {
 	}
 
 	/**
+	 * Store plugin active status before update
+	 * This runs before the plugin is deactivated during update
+	 *
+	 * @param bool  $response Installation response (true on success, false on failure)
+	 * @param array $hook_extra Extra arguments passed to the hook
+	 * @return bool Unmodified return value
+	 */
+	public function storeActiveStatus( $response, $hook_extra ) {
+		$plugin_basename = $this->config->getPluginBasename();
+
+		// Store active status in multiple scenarios to ensure we catch it
+		if ( isset( $hook_extra['plugin'] ) && $hook_extra['plugin'] === $plugin_basename ) {
+			// Direct plugin update
+			$was_active = is_plugin_active( $plugin_basename );
+			set_transient( 'plugin_was_active_' . md5( $plugin_basename ), $was_active, HOUR_IN_SECONDS );
+
+			// Also store as option as backup
+			update_option( '_plugin_was_active_' . md5( $plugin_basename ), $was_active, false );
+		} elseif ( isset( $hook_extra['plugins'] ) && is_array( $hook_extra['plugins'] ) ) {
+			// Bulk update
+			if ( in_array( $plugin_basename, $hook_extra['plugins'], true ) ) {
+				$was_active = is_plugin_active( $plugin_basename );
+				set_transient( 'plugin_was_active_' . md5( $plugin_basename ), $was_active, HOUR_IN_SECONDS );
+				update_option( '_plugin_was_active_' . md5( $plugin_basename ), $was_active, false );
+			}
+		}
+
+		return $response;
+	}
+
+	/**
 	 * Clear cache after WordPress completes plugin update
+	 * Only clears cache, relies on WordPress for reactivation
 	 *
 	 * @param \WP_Upgrader $upgrader WordPress upgrader instance
 	 * @param array        $options Update options
@@ -617,7 +704,8 @@ class Updater {
 			// Clear GitHub API cache after successful update
 			$this->github_api->clearCache();
 
-			$this->logAction( 'Update', 'Success', 'Plugin updated successfully. Cache cleared.' );
+			// Log success - WordPress handles reactivation automatically
+			$this->logAction( 'Update', 'Success', 'Plugin updated successfully. WordPress will handle reactivation.' );
 		}
 	}
 }
