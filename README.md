@@ -140,94 +140,120 @@ Automate your release process by adding this workflow to your plugin repository:
 name: Build and Release Plugin
 
 on:
-  push:
-    branches:
-      - release  # Trigger on push to release branch
+    push:
+        branches:
+            - release # Trigger on push to release branch
 
 permissions:
-  contents: write
+    contents: write
 
 jobs:
-  build-release:
-    name: Build and Create Release
-    runs-on: ubuntu-latest
+    build-release:
+        name: Build and Create Release
+        runs-on: ubuntu-latest
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
 
-      - name: Set up PHP
-        uses: shivammathur/setup-php@v2
-        with:
-          php-version: "8.3"
-          tools: composer:v2
+            - name: Set up PHP
+              uses: shivammathur/setup-php@v2
+              with:
+                  php-version: "8.3"
+                  tools: composer:v2
 
-      - name: Install production dependencies
-        run: composer install --no-dev --prefer-dist --optimize-autoloader
+            - name: Install production dependencies
+              run: composer install --no-dev --prefer-dist --optimize-autoloader
 
-      - name: Determine version and plugin slug
-        id: vars
-        run: |
-          # Update these variables for your plugin
-          FILE_FOR_VERSION="my-plugin.php"  # Your main plugin file
-          SLUG="my-plugin"                  # Your plugin slug
+            - name: Check for npm project
+              id: check_npm
+              run: |
+                  if [ -f "package.json" ] && ([ -f "package-lock.json" ]); then
+                    echo "has_npm=true" >> "$GITHUB_OUTPUT"
+                  else
+                    echo "has_npm=false" >> "$GITHUB_OUTPUT"
+                  fi
 
-          # Extract version from plugin header
-          VERSION=$(grep -iE '^\s*\*?\s*Version:' "$FILE_FOR_VERSION" | head -n1 | sed -E 's/^.*Version:\s*//I' | tr -d '\r' | sed 's/\s*$//')
+            - name: Setup Node.js
+              if: steps.check_npm.outputs.has_npm == 'true'
+              uses: actions/setup-node@v4
+              with:
+                  node-version: "lts/*"
+                  cache: "npm"
 
-          if [[ -z "$VERSION" ]]; then
-            echo "Error: Could not determine plugin version"
-            exit 1
-          fi
+            - name: Install npm dependencies
+              if: steps.check_npm.outputs.has_npm == 'true'
+              run: npm install
 
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "slug=${SLUG}" >> "$GITHUB_OUTPUT"
-          echo "zip=${SLUG}.zip" >> "$GITHUB_OUTPUT"
+            - name: Build assets
+              if: steps.check_npm.outputs.has_npm == 'true'
+              run: npm run build
 
-      - name: Create plugin package
-        run: |
-          mkdir -p "release-package/${{ steps.vars.outputs.slug }}"
+            - name: Determine version and plugin slug
+              id: vars
+              run: |
+                  # Update these variables for your plugin
+                  FILE_FOR_VERSION="my-plugin.php"  # Your main plugin file
+                  SLUG="my-plugin"                  # Your plugin slug
 
-          # Copy files, excluding dev dependencies
-          rsync -a --delete \
-            --exclude '.git' \
-            --exclude '.github' \
-            --exclude 'node_modules' \
-            --exclude 'tests' \
-            --exclude '.gitignore' \
-            --exclude 'composer.json' \
-            --exclude 'composer.lock' \
-            --exclude 'phpcs.xml' \
-            --exclude 'phpstan.neon' \
-            --exclude 'rector.php' \
-            --exclude 'biome.json' \
-            --exclude 'package.json' \
-            --exclude 'package-lock.json' \
-            ./ "release-package/${{ steps.vars.outputs.slug }}/"
+                  # Extract version from plugin header
+                  VERSION=$(grep -iE '^\s*\*?\s*Version:' "$FILE_FOR_VERSION" | head -n1 | sed -E 's/^.*Version:\s*//I' | tr -d '\r' | sed 's/\s*$//')
 
-      - name: Create ZIP file
-        working-directory: release-package/${{ steps.vars.outputs.slug }}
-        run: zip -r "../${{ steps.vars.outputs.zip }}" .
+                  if [[ -z "$VERSION" ]]; then
+                    echo "Error: Could not determine plugin version"
+                    exit 1
+                  fi
 
-      - name: Create and push tag
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -a "v${{ steps.vars.outputs.version }}" -m "Release v${{ steps.vars.outputs.version }}"
-          git push origin "v${{ steps.vars.outputs.version }}"
+                  echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+                  echo "slug=${SLUG}" >> "$GITHUB_OUTPUT"
+                  echo "zip=${SLUG}.zip" >> "$GITHUB_OUTPUT"
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ steps.vars.outputs.version }}
-          name: v${{ steps.vars.outputs.version }}
-          body: "Release version ${{ steps.vars.outputs.version }}"
-          files: release-package/${{ steps.vars.outputs.zip }}
-          generate_release_notes: true
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            - name: Create plugin package
+              run: |
+                  mkdir -p "release-package/${{ steps.vars.outputs.slug }}"
+
+                  # Copy files, excluding dev dependencies
+                  rsync -a --delete \
+                    --exclude '.git' \
+                    --exclude '.github' \
+                    --exclude 'node_modules' \
+                    --exclude 'tests' \
+                    --exclude '.gitignore' \
+                    --exclude 'composer.json' \
+                    --exclude 'composer.lock' \
+                    --exclude 'phpcs.xml' \
+                    --exclude 'phpstan.neon' \
+                    --exclude 'rector.php' \
+                    --exclude 'biome.json' \
+                    --exclude 'package.json' \
+                    --exclude 'package-lock.json' \
+                    --exclude 'webpack.config.js' \
+                    --exclude 'release-package' \
+                    ./ "release-package/${{ steps.vars.outputs.slug }}/"
+
+            - name: Create ZIP file
+              working-directory: release-package/${{ steps.vars.outputs.slug }}
+              run: zip -r "../${{ steps.vars.outputs.zip }}" .
+
+            - name: Create and push tag
+              run: |
+                  git config user.name "github-actions[bot]"
+                  git config user.email "github-actions[bot]@users.noreply.github.com"
+                  git tag -a "v${{ steps.vars.outputs.version }}" -m "Release v${{ steps.vars.outputs.version }}"
+                  git push origin "v${{ steps.vars.outputs.version }}"
+
+            - name: Create GitHub Release
+              uses: softprops/action-gh-release@v2
+              with:
+                  tag_name: v${{ steps.vars.outputs.version }}
+                  name: v${{ steps.vars.outputs.version }}
+                  body: "Release version ${{ steps.vars.outputs.version }}"
+                  files: release-package/${{ steps.vars.outputs.zip }}
+                  generate_release_notes: true
+                  draft: false
+                  prerelease: false
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
 
 **Usage:**
