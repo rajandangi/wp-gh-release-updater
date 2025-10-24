@@ -49,8 +49,11 @@ class Updater {
 		$this->github_api      = $github_api;
 		$this->current_version = $config->getPluginVersion();
 
-		// NOTE: Auth filter is NOT registered globally to prevent token leaks
-		// It will be added only during actual download operations
+		// Hook into WordPress update transient to inject auth when needed
+		add_filter( 'pre_set_site_transient_update_plugins', array( $this, 'enableAuthForUpdate' ), 10, 1 );
+
+		// Hook into upgrader pre-download to ensure auth is active
+		add_filter( 'upgrader_pre_download', array( $this, 'enableAuthForDownload' ), 10, 3 );
 
 		// Clear update cache after successful plugin upgrade
 		add_action( 'upgrader_process_complete', array( $this, 'clearCacheAfterUpdate' ), 10, 2 );
@@ -127,11 +130,9 @@ class Updater {
 				'tag_name'     => $release_data['tag_name'],
 				'published_at' => $release_data['published_at'] ?? '',
 				'assets'       => $release_data['assets'] ?? array(),
-				'zipball_url'  => $release_data['zipball_url'] ?? '',
 				'html_url'     => $release_data['html_url'] ?? '',
 			);
 			$this->config->updateOption( 'release_snapshot', $release_snapshot );
-
 			$this->logAction( 'Check', 'Success', $result['message'] );
 
 		} catch ( \Exception $e ) {
@@ -162,8 +163,8 @@ class Updater {
 				return $result;
 			}
 
-			// Set lock (5 minute expiration)
-			set_transient( $lock_key, time(), 300 );
+			// Set lock (1 minute expiration)
+			set_transient( $lock_key, time(), 60 );
 
 			// Check if update is available
 			$latest_version   = $this->config->getOption( 'latest_version', '' );
@@ -183,40 +184,12 @@ class Updater {
 				return $result;
 			}
 
-			// Get fresh release data to check if version changed
-			$current_release_data = $this->github_api->getLatestRelease();
-
-			if ( is_wp_error( $current_release_data ) ) {
-				delete_transient( $lock_key );
-				$result['message'] = 'Failed to verify release data: ' . $current_release_data->get_error_message();
-				$this->logAction( 'Download', 'Failure', $result['message'] );
-				return $result;
-			}
-
-			// Extract current version and compare with snapshot
-			$current_latest_version = $this->extractVersionFromTag( $current_release_data['tag_name'] );
-
-			// Check for race condition: version changed since last check
-			if ( $current_latest_version !== $release_snapshot['version'] ) {
-				delete_transient( $lock_key );
-				$result['message'] = sprintf(
-					'Warning: Release version changed from %s to %s since last check. Please re-check for updates before proceeding.',
-					$release_snapshot['version'],
-					$current_latest_version
-				);
-				$this->logAction( 'Download', 'Failure', $result['message'] );
-				// Clear outdated snapshot
-				$this->clearUpdateCache();
-				return $result;
-			}
-
-			// Use snapshot data instead of fresh data to ensure consistency
+			// Use snapshot data directly - no need to fetch fresh data
+			// The snapshot was already validated during check
 			$release_data = $release_snapshot;
 
-			// Resolve package URL (GitHub asset or zipball)
-			$package_url = $this->findDownloadAsset( $release_data );
-
-			if ( empty( $package_url ) ) {
+			// Resolve package URL from GitHub assets
+			$package_url = $this->findDownloadAsset( $release_data );           if ( empty( $package_url ) ) {
 				delete_transient( $lock_key );
 				$result['message'] = 'No suitable download asset found in the release.';
 				$this->logAction( 'Download', 'Failure', $result['message'] );
@@ -236,7 +209,7 @@ class Updater {
 			);
 
 			// Lock will be released after update completes via clearCacheAfterUpdate hook
-			// or automatically expires after 5 minutes
+			// or automatically expires after 1 minute
 
 			$result['success']      = true;
 			$result['redirect_url'] = $update_url;
@@ -256,6 +229,55 @@ class Updater {
 	}
 
 	/**
+	 * Enable auth filter when update transient is being set.
+	 * This ensures authentication is available during the entire update process.
+	 *
+	 * @param mixed $transient Update plugins transient
+	 * @return mixed Unmodified transient
+	 */
+	public function enableAuthForUpdate( $transient ) {
+		// Check if our plugin has an update available
+		$plugin_basename = $this->config->getPluginBasename();
+
+		if ( is_object( $transient ) && isset( $transient->response[ $plugin_basename ] ) ) {
+			// Our plugin has an update - enable auth filter
+			if ( ! has_filter( 'http_request_args', array( $this, 'httpAuthForGitHub' ) ) ) {
+				add_filter( 'http_request_args', array( $this, 'httpAuthForGitHub' ), 10, 2 );
+			}
+		}
+
+		// Also check if we're in an update process (admin page)
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Safe read-only check for upgrade action
+		if ( isset( $_GET['action'] ) && $_GET['action'] === 'upgrade-plugin' ) {
+			if ( ! has_filter( 'http_request_args', array( $this, 'httpAuthForGitHub' ) ) ) {
+				add_filter( 'http_request_args', array( $this, 'httpAuthForGitHub' ), 10, 2 );
+			}
+		}
+
+		return $transient;
+	}
+
+	/**
+	 * Enable auth filter before WordPress downloads the update package.
+	 *
+	 * @param bool         $reply   Whether to bail without returning the package (default false)
+	 * @param string       $package The package file name or URL
+	 * @param \WP_Upgrader $upgrader The WP_Upgrader instance
+	 * @return bool Unmodified reply
+	 */
+	public function enableAuthForDownload( $reply, $package, $upgrader ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed
+		// Check if this is a GitHub URL
+		if ( is_string( $package ) && strpos( $package, 'github' ) !== false ) {
+			// Enable auth filter for this download
+			if ( ! has_filter( 'http_request_args', array( $this, 'httpAuthForGitHub' ) ) ) {
+				add_filter( 'http_request_args', array( $this, 'httpAuthForGitHub' ), 10, 2 );
+			}
+		}
+
+		return $reply;
+	}
+
+	/**
 	 * Register/update the core plugin update transient so WordPress knows
 	 * about the new version and package URL. This allows the default updater
 	 * to handle the installation just like an official update.
@@ -265,9 +287,6 @@ class Updater {
 	 * @return void
 	 */
 	private function registerCoreUpdate( $new_version, $package_url ) {
-		// Enable GitHub auth filter ONLY during update process
-		add_filter( 'http_request_args', array( $this, 'httpAuthForGitHub' ), 10, 2 );
-
 		$transient = get_site_transient( 'update_plugins' );
 
 		if ( ! is_object( $transient ) ) {
@@ -339,11 +358,17 @@ class Updater {
 			$args['headers'] = array();
 		}
 		$args['headers']['Authorization'] = 'token ' . $token;
-		if ( ! isset( $args['headers']['Accept'] ) ) {
+
+		// For GitHub API asset downloads, force the octet-stream Accept header
+		if ( strpos( $url, 'api.github.com' ) !== false && strpos( $url, '/releases/assets/' ) !== false ) {
 			$args['headers']['Accept'] = 'application/octet-stream';
 		}
+
 		// Allow larger files
 		$args['timeout'] = max( $args['timeout'] ?? 30, 300 );
+
+		// Ensure redirects are followed (GitHub API redirects to actual download URL)
+		$args['redirection'] = 5;
 
 		return $args;
 	}
@@ -459,9 +484,19 @@ class Updater {
 			// Check against all patterns
 			foreach ( $patterns as $pattern ) {
 				if ( $asset_name === $pattern ) {
+					// Use the API URL provided by GitHub for authenticated downloads
+					// This is already in the correct format: /repos/{owner}/{repo}/releases/assets/{id}
+					$download_url = $asset['url'];
+
+					$this->logAction(
+						'Download',
+						'Success',
+						sprintf( 'Found matching asset: %s (using GitHub API URL)', $asset['name'] )
+					);
+
 					return apply_filters(
 						$this->config->getPluginSlug() . '_download_url',
-						$asset['browser_download_url'],
+						$download_url,
 						$asset,
 						$release_data
 					);
@@ -573,7 +608,7 @@ class Updater {
 			$lock_key = 'update_in_progress_' . md5( $plugin_basename );
 			delete_transient( $lock_key );
 
-			// Remove GitHub auth filter after update completes
+			// Remove auth filter after update completes
 			remove_filter( 'http_request_args', array( $this, 'httpAuthForGitHub' ), 10 );
 
 			// Clear the update cache after successful update
