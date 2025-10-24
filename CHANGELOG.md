@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- Fixed "The plugin is at the latest version" error when clicking "Update now" button. The plugin now properly injects update information into WordPress's update transient via the `site_transient_update_plugins` filter, ensuring WordPress can correctly detect and install available updates.
+
 ## [1.0.0] - 2025-10-18
 - Initial release of WP GitHub Updater Manager
 ---

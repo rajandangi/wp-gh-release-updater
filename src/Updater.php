@@ -49,6 +49,9 @@ class Updater {
 		$this->github_api      = $github_api;
 		$this->current_version = $config->getPluginVersion();
 
+		// Hook into WordPress update transient to inject update information
+		add_filter( 'site_transient_update_plugins', array( $this, 'injectUpdateInfo' ), 10, 1 );
+
 		// Hook into WordPress update transient to inject auth when needed
 		add_filter( 'pre_set_site_transient_update_plugins', array( $this, 'enableAuthForUpdate' ), 10, 1 );
 
@@ -144,6 +147,60 @@ class Updater {
 	}
 
 	/**
+	 * Inject update information into WordPress update transient
+	 * This allows WordPress to see the update and enable the "Update now" button
+	 *
+	 * @param object|false $transient Update plugins transient
+	 * @return object|false Modified transient
+	 */
+	public function injectUpdateInfo( $transient ) {
+		// If transient is not an object, return as-is
+		if ( ! is_object( $transient ) ) {
+			return $transient;
+		}
+
+		// Check if we have update information stored
+		$latest_version   = $this->config->getOption( 'latest_version', '' );
+		$update_available = $this->config->getOption( 'update_available', false );
+		$release_snapshot = $this->config->getOption( 'release_snapshot', array() );
+
+		// Only inject if we have a valid update available
+		if ( ! $update_available || empty( $latest_version ) || empty( $release_snapshot ) ) {
+			return $transient;
+		}
+
+		// Verify the version is actually newer
+		if ( ! $this->isUpdateAvailable( $this->current_version, $latest_version ) ) {
+			return $transient;
+		}
+
+		// Get the download URL from the release snapshot
+		$package_url = $this->findDownloadAsset( $release_snapshot );
+		if ( empty( $package_url ) ) {
+			return $transient;
+		}
+
+		// Ensure response array exists
+		if ( ! isset( $transient->response ) || ! is_array( $transient->response ) ) {
+			$transient->response = array();
+		}
+
+		// Inject update information
+		$plugin_basename = $this->config->getPluginBasename();
+		$repo_url        = $this->config->getOption( 'repository_url', 'https://github.com' );
+
+		$transient->response[ $plugin_basename ] = (object) array(
+			'slug'        => $this->config->getPluginSlug(),
+			'plugin'      => $plugin_basename,
+			'new_version' => $latest_version,
+			'package'     => $package_url,
+			'url'         => $repo_url,
+		);
+
+		return $transient;
+	}
+
+	/**
 	 * Perform plugin update
 	 *
 	 * @return array Update result
@@ -196,8 +253,10 @@ class Updater {
 				return $result;
 			}
 
-			// Register this as an available update in the core update transient
-			$this->registerCoreUpdate( $latest_version, $package_url );         // Build the WordPress native update URL with fresh nonce
+			// No need to manually register update - it's now injected via the injectUpdateInfo filter
+			// This ensures the update is always available when WordPress checks the transient
+
+			// Build the WordPress native update URL with fresh nonce
 			$plugin_basename = $this->config->getPluginBasename();
 			$update_url      = add_query_arg(
 				array(
