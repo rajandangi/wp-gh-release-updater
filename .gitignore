@@ -20,7 +20,6 @@ Thumbs.db
 .phpcs-cache
 
 # PHPUnit
-/phpunit.xml
 /.phpunit.result.cache
 /coverage/
 

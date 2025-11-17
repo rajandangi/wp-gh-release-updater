@@ -61,8 +61,8 @@
     "phpstan-baseline": "phpstan analyse --memory-limit=1G --generate-baseline",
     "rector": "rector process --dry-run",
     "rector-fix": "rector process",
-    "biome:check": "npm run biome:check",
-    "biome:fix": "npm run biome:check:write",
+    "biome:check": "npx biome check src/admin/js src/admin/css",
+    "biome:fix": "npx biome check --write src/admin/js src/admin/css",
     "qa": [
       "@phpcs",
       "@phpstan",

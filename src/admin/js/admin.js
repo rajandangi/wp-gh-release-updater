@@ -5,6 +5,22 @@
  */
 
 document.addEventListener('DOMContentLoaded', () => {
+	// Find the plugin-specific localized variable
+	// Since scripts are only enqueued on their own settings page, only ONE will exist
+	let wpGitHubUpdater = null;
+
+	// Search for any variable matching the pattern *_GitHubUpdater
+	for (const key in window) {
+		if (key.endsWith('_GitHubUpdater') && typeof window[key] === 'object') {
+			wpGitHubUpdater = window[key];
+			break;
+		}
+	}
+
+	if (!wpGitHubUpdater) {
+		return;
+	}
+
 	const testButton = document.getElementById('test-repository');
 	const messagesContainer = document.getElementById('wp-github-updater-messages');
 
@@ -63,8 +79,8 @@ document.addEventListener('DOMContentLoaded', () => {
 			}),
 		})
 			.then((response) => response.json())
-			.catch((error) => {
-				console.error('Ajax error:', error);
+			.then((result) => result)
+			.catch(() => {
 				return { success: false, message: wpGitHubUpdater.strings.error };
 			});
 	}

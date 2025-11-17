@@ -170,25 +170,30 @@ class Admin {
 			$this->config->getPluginVersion()
 		);
 
+		$script_handle = $this->config->getScriptHandle();
+		$script_url    = $this->config->getUpdaterUrl() . 'admin/js/admin.js';
+
 		wp_enqueue_script(
-			$this->config->getScriptHandle(),
-			$this->config->getUpdaterUrl() . 'admin/js/admin.js',
+			$script_handle,
+			$script_url,
 			array(),
 			$this->config->getPluginVersion(),
 			true
 		);
 
 		// Localize script for AJAX
+		// Use plugin-specific variable name to avoid conflicts when multiple plugins use this updater
+		$js_var_name = str_replace( '-', '_', $this->config->getPluginSlug() ) . '_GitHubUpdater';
 		wp_localize_script(
 			$this->config->getScriptHandle(),
-			'wpGitHubUpdater',
+			$js_var_name,
 			array(
-				'ajaxUrl' => admin_url( 'admin-ajax.php' ),
-				'nonce'   => wp_create_nonce( $this->config->getNonceName() ),
-				'actions' => array(
+				'ajaxUrl'    => admin_url( 'admin-ajax.php' ),
+				'nonce'      => wp_create_nonce( $this->config->getNonceName() ),
+				'actions'    => array(
 					'testRepo' => $this->config->getAjaxTestRepoAction(),
 				),
-				'strings' => array(
+				'strings'    => array(
 					'checking'       => 'Checking for updates...',
 					'updating'       => 'Updating plugin...',
 					'testing'        => 'Testing repository access...',
@@ -196,6 +201,8 @@ class Admin {
 					'confirm_update' => 'Are you sure you want to update the plugin? This action cannot be undone.',
 					'success'        => 'Operation completed successfully.',
 				),
+				'pluginSlug' => $this->config->getPluginSlug(),
+				'varName'    => $js_var_name, // Pass variable name to JS for debugging
 			)
 		);
 	}

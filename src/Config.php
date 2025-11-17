@@ -268,9 +268,13 @@ class Config {
 		$this->plugin_basename = plugin_basename( $plugin_file );
 
 		// Set updater manager paths (where the updater files are located)
-		// __DIR__ is the src/ directory, so we use it directly since admin/ is inside src/
-		$this->updater_dir = trailingslashit( __DIR__ );  // src/
-		$this->updater_url = plugin_dir_url( __FILE__ );   // src/
+		// Calculate paths relative to the consuming plugin, not __FILE__ which can be cached by PHP
+		// Get the plugin's directory and build the vendor path from there
+		$plugin_dir  = dirname( $plugin_file );
+		$vendor_path = $plugin_dir . '/vendor/rajandangi/wp-gh-release-updater/src/';
+
+		$this->updater_dir = trailingslashit( $vendor_path );
+		$this->updater_url = plugin_dir_url( $plugin_file ) . 'vendor/rajandangi/wp-gh-release-updater/src/';
 
 		// Extract plugin data from file headers
 		$plugin_data          = $this->extractPluginData( $plugin_file );
@@ -302,9 +306,9 @@ class Config {
 		$this->ajax_test_repo_action   = $ajax_prefix . 'test_repo';
 		$this->ajax_clear_cache_action = $ajax_prefix . 'clear_cache';
 
-		// Asset handles
-		$this->script_handle = $asset_prefix . 'admin';
-		$this->style_handle  = $asset_prefix . 'admin';
+		// Asset handles - use 'updater' suffix to avoid conflicts with plugin's own admin scripts
+		$this->script_handle = $asset_prefix . 'updater-admin';
+		$this->style_handle  = $asset_prefix . 'updater-admin';
 
 		// Admin menu settings (menu_title and page_title are required)
 		$this->menu_parent = $config['menu_parent'] ?? 'tools.php';
