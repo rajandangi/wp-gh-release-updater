@@ -270,7 +270,7 @@ class Config {
 		// Set updater manager paths (where the updater files are located)
 		// Calculate paths relative to the consuming plugin, not __FILE__ which can be cached by PHP
 		// Get the plugin's directory and build the vendor path from there
-		$plugin_dir = dirname( $plugin_file );
+		$plugin_dir  = dirname( $plugin_file );
 		$vendor_path = $plugin_dir . '/vendor/rajandangi/wp-gh-release-updater/src/';
 
 		$this->updater_dir = trailingslashit( $vendor_path );

@@ -171,7 +171,7 @@ class Admin {
 		);
 
 		$script_handle = $this->config->getScriptHandle();
-		$script_url = $this->config->getUpdaterUrl() . 'admin/js/admin.js';
+		$script_url    = $this->config->getUpdaterUrl() . 'admin/js/admin.js';
 
 		wp_enqueue_script(
 			$script_handle,
@@ -188,12 +188,12 @@ class Admin {
 			$this->config->getScriptHandle(),
 			$js_var_name,
 			array(
-				'ajaxUrl' => admin_url( 'admin-ajax.php' ),
-				'nonce'   => wp_create_nonce( $this->config->getNonceName() ),
-				'actions' => array(
+				'ajaxUrl'    => admin_url( 'admin-ajax.php' ),
+				'nonce'      => wp_create_nonce( $this->config->getNonceName() ),
+				'actions'    => array(
 					'testRepo' => $this->config->getAjaxTestRepoAction(),
 				),
-				'strings' => array(
+				'strings'    => array(
 					'checking'       => 'Checking for updates...',
 					'updating'       => 'Updating plugin...',
 					'testing'        => 'Testing repository access...',
