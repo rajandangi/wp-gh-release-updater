@@ -73,18 +73,14 @@ class Config {
 	private $updater_dir;
 
 	/**
-	 * Updater URL.
-	 *
-	 * @var string
-	 */
-	private $updater_url;
+  * Updater URL.
+  */
+ private readonly string $updater_url;
 
 	/**
-	 * Option prefix for database options.
-	 *
-	 * @var string
-	 */
-	private $option_prefix;
+  * Option prefix for database options.
+  */
+ private readonly string $option_prefix;
 
 	/**
 	 * Asset prefix for script/style handles.
@@ -94,11 +90,9 @@ class Config {
 	private $asset_prefix;
 
 	/**
-	 * Nonce name for security verification.
-	 *
-	 * @var string
-	 */
-	private $nonce_name;
+  * Nonce name for security verification.
+  */
+ private readonly string $nonce_name;
 
 	/**
 	 * Parent menu slug for admin page.
@@ -136,53 +130,39 @@ class Config {
 	private $settings_page_slug;
 
 	/**
-	 * Settings group name.
-	 *
-	 * @var string
-	 */
-	private $settings_group;
+  * Settings group name.
+  */
+ private readonly string $settings_group;
 
 	/**
-	 * AJAX action name for checking updates.
-	 *
-	 * @var string
-	 */
-	private $ajax_check_action;
+  * AJAX action name for checking updates.
+  */
+ private readonly string $ajax_check_action;
 
 	/**
-	 * AJAX action name for performing updates.
-	 *
-	 * @var string
-	 */
-	private $ajax_update_action;
+  * AJAX action name for performing updates.
+  */
+ private readonly string $ajax_update_action;
 
 	/**
-	 * AJAX action name for testing repository connection.
-	 *
-	 * @var string
-	 */
-	private $ajax_test_repo_action;
+  * AJAX action name for testing repository connection.
+  */
+ private readonly string $ajax_test_repo_action;
 
 	/**
-	 * AJAX action name for clearing cache.
-	 *
-	 * @var string
-	 */
-	private $ajax_clear_cache_action;
+  * AJAX action name for clearing cache.
+  */
+ private readonly string $ajax_clear_cache_action;
 
 	/**
-	 * Script handle for enqueuing JavaScript.
-	 *
-	 * @var string
-	 */
-	private $script_handle;
+  * Script handle for enqueuing JavaScript.
+  */
+ private readonly string $script_handle;
 
 	/**
-	 * Style handle for enqueuing CSS.
-	 *
-	 * @var string
-	 */
-	private $style_handle;
+  * Style handle for enqueuing CSS.
+  */
+ private readonly string $style_handle;
 
 	/**
 	 * Instance registry - keyed by plugin file path
@@ -190,7 +170,7 @@ class Config {
 	 *
 	 * @var array<string, Config>
 	 */
-	private static $instances = array();
+	private static array $instances = [];
 
 	/**
 	 * Get instance for a specific plugin
@@ -199,7 +179,7 @@ class Config {
 	 * @param array  $config Configuration options
 	 * @return Config
 	 */
-	public static function getInstance( $plugin_file = null, $config = array() ) {
+	public static function getInstance( $plugin_file = null, $config = [] ) {
 		if ( ! $plugin_file ) {
 			wp_die( 'GitHub Updater: Plugin file is required to get Config instance' );
 		}
@@ -213,30 +193,29 @@ class Config {
 		if ( ! isset( self::$instances[ $key ] ) ) {
 			self::$instances[ $key ] = new self( $plugin_file, $config );
 		}
+  
 		return self::$instances[ $key ];
 	}
 
 	/**
-	 * Clear instance for a specific plugin (useful for testing)
-	 *
-	 * @param string $plugin_file Main plugin file path
-	 * @return void
-	 */
-	public static function clearInstance( $plugin_file ) {
+  * Clear instance for a specific plugin (useful for testing)
+  *
+  * @param string $plugin_file Main plugin file path
+  */
+ public static function clearInstance( $plugin_file ): void {
 		$key = realpath( $plugin_file );
 		if ( false === $key ) {
 			$key = $plugin_file;
 		}
+  
 		unset( self::$instances[ $key ] );
 	}
 
 	/**
-	 * Clear all instances (useful for testing)
-	 *
-	 * @return void
-	 */
-	public static function clearAllInstances() {
-		self::$instances = array();
+  * Clear all instances (useful for testing)
+  */
+ public static function clearAllInstances(): void {
+		self::$instances = [];
 	}
 
 	/**
@@ -255,7 +234,7 @@ class Config {
 	 *      - menu_parent: string (default: 'tools.php')
 	 *      - capability: string (default: 'manage_options')
 	 */
-	private function __construct( $plugin_file = null, $config = array() ) {
+	private function __construct( $plugin_file = null, $config = [] ) {
 		if ( ! $plugin_file || ! file_exists( $plugin_file ) ) {
 			wp_die( 'GitHub Updater: Invalid plugin file provided' );
 		}
@@ -270,7 +249,7 @@ class Config {
 		// Set updater manager paths (where the updater files are located)
 		// Calculate paths relative to the consuming plugin, not __FILE__ which can be cached by PHP
 		// Get the plugin's directory and build the vendor path from there
-		$plugin_dir  = dirname( $plugin_file );
+		$plugin_dir  = dirname( (string) $plugin_file );
 		$vendor_path = $plugin_dir . '/vendor/rajandangi/wp-gh-release-updater/src/';
 
 		$this->updater_dir = trailingslashit( $vendor_path );
@@ -345,7 +324,7 @@ class Config {
 	 * @param string $plugin_file Plugin file path
 	 * @return array Plugin data
 	 */
-	private function extractPluginData( $plugin_file ) {
+	private function extractPluginData( $plugin_file ): array {
 		// Get default plugin data
 		if ( function_exists( 'get_plugin_data' ) ) {
 			$plugin_data = get_plugin_data( $plugin_file, false, false );
@@ -358,12 +337,7 @@ class Config {
 		$file_name = basename( $plugin_file, '.php' );
 		$slug      = sanitize_title( $file_name );
 
-		return array(
-			'name'        => $plugin_data['Name'] ?? 'Unknown Plugin',
-			'version'     => $plugin_data['Version'] ?? '1.0.0',
-			'text_domain' => $plugin_data['TextDomain'] ?? $slug,
-			'slug'        => $slug,
-		);
+		return ['name'        => $plugin_data['Name'] ?? 'Unknown Plugin', 'version'     => $plugin_data['Version'] ?? '1.0.0', 'text_domain' => $plugin_data['TextDomain'] ?? $slug, 'slug'        => $slug];
 	}
 
 	/**
@@ -372,20 +346,16 @@ class Config {
 	 * @param string $plugin_file Plugin file path
 	 * @return array Headers
 	 */
-	private function parsePluginHeaders( $plugin_file ) {
-		$headers = array(
-			'Name'       => 'Plugin Name',
-			'Version'    => 'Version',
-			'TextDomain' => 'Text Domain',
-		);
+	private function parsePluginHeaders( $plugin_file ): array {
+		$headers = ['Name'       => 'Plugin Name', 'Version'    => 'Version', 'TextDomain' => 'Text Domain'];
 
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading local plugin file headers, not remote URL
 		$file_data   = file_get_contents( $plugin_file, false, null, 0, 8192 );
-		$plugin_data = array();
+		$plugin_data = [];
 
 		foreach ( $headers as $key => $value ) {
 			if ( preg_match( '/^[ \t\/*#@]*' . preg_quote( $value, '/' ) . ':(.*)$/mi', $file_data, $match ) && $match[1] ) {
-				$plugin_data[ $key ] = trim( preg_replace( '/\s*(?:\*\/|\?>).*/', '', $match[1] ) );
+				$plugin_data[ $key ] = trim( (string) preg_replace( '/\s*(?:\*\/|\?>).*/', '', $match[1] ) );
 			}
 		}
 
@@ -454,7 +424,7 @@ class Config {
 	 * @param string $option_name Option name without prefix
 	 * @return string Full option name with prefix
 	 */
-	public function getOptionName( $option_name ) {
+	public function getOptionName( string $option_name ): string {
 		return $this->option_prefix . $option_name;
 	}
 
@@ -575,15 +545,8 @@ class Config {
 	 *
 	 * @return array Default options
 	 */
-	public function getDefaultOptions() {
-		return array(
-			'repository_url'   => '',
-			'access_token'     => '',
-			'last_checked'     => 0,
-			'latest_version'   => '',
-			'update_available' => false,
-			'last_log'         => array(),
-		);
+	public function getDefaultOptions(): array {
+		return ['repository_url'   => '', 'access_token'     => '', 'last_checked'     => 0, 'latest_version'   => '', 'update_available' => false, 'last_log'         => []];
 	}
 
 	/**
@@ -593,7 +556,7 @@ class Config {
 	 * @param mixed  $default_value Default value
 	 * @return mixed Option value
 	 */
-	public function getOption( $option_name, $default_value = false ) {
+	public function getOption( $option_name, mixed $default_value = false ) {
 		return get_option( $this->getOptionName( $option_name ), $default_value );
 	}
 
@@ -604,7 +567,7 @@ class Config {
 	 * @param mixed  $value Option value
 	 * @return bool Success status
 	 */
-	public function updateOption( $option_name, $value ) {
+	public function updateOption( $option_name, mixed $value ) {
 		return update_option( $this->getOptionName( $option_name ), $value );
 	}
 
@@ -615,7 +578,7 @@ class Config {
 	 * @param mixed  $value Option value
 	 * @return bool Success status
 	 */
-	public function addOption( $option_name, $value ) {
+	public function addOption( $option_name, mixed $value ) {
 		return add_option( $this->getOptionName( $option_name ), $value );
 	}
 
@@ -637,7 +600,7 @@ class Config {
 	 * @param string $data Data to encrypt
 	 * @return string Encrypted data (base64: encrypted::iv) or empty string on failure
 	 */
-	public function encrypt( $data ) {
+	public function encrypt( $data ): string {
 		if ( empty( $data ) ) {
 			return '';
 		}
@@ -656,22 +619,22 @@ class Config {
 	 * @param string $encrypted_data Encrypted data (base64 encoded)
 	 * @return string Decrypted data or empty string on failure
 	 */
-	public function decrypt( $encrypted_data ) {
+	public function decrypt( $encrypted_data ): string {
 		if ( empty( $encrypted_data ) ) {
 			return '';
 		}
 
 		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Used for decryption, not code obfuscation
 		$decoded = base64_decode( $encrypted_data, true );
-		if ( ! $decoded || false === strpos( $decoded, '::' ) ) {
+		if ( $decoded === '' || $decoded === '0' || $decoded === false || !str_contains( $decoded, '::' ) ) {
 			return '';
 		}
 
-		list( $encrypted, $iv_encoded ) = explode( '::', $decoded, 2 );
+		[$encrypted, $iv_encoded] = explode( '::', $decoded, 2 );
 		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Used for decryption, not code obfuscation
 		$iv = base64_decode( $iv_encoded, true );
 
-		if ( ! $iv ) {
+		if ( $iv === '' || $iv === '0' || $iv === false ) {
 			return '';
 		}
 
@@ -684,15 +647,10 @@ class Config {
 	 *
 	 * @return string Encryption key (32 bytes for AES-256)
 	 */
-	private function getEncryptionKey() {
+	private function getEncryptionKey(): string {
 		// Use WordPress authentication salts to create a unique key
 		// This ensures the key is unique per WordPress installation
-		$salt_keys = array(
-			'AUTH_KEY',
-			'SECURE_AUTH_KEY',
-			'LOGGED_IN_KEY',
-			'NONCE_KEY',
-		);
+		$salt_keys = ['AUTH_KEY', 'SECURE_AUTH_KEY', 'LOGGED_IN_KEY', 'NONCE_KEY'];
 
 		$key_material = '';
 		foreach ( $salt_keys as $salt_key ) {
@@ -702,7 +660,7 @@ class Config {
 		}
 
 		// If no salts defined, fall back to wp_salt
-		if ( empty( $key_material ) ) {
+		if ( $key_material === '' || $key_material === '0' ) {
 			$key_material = wp_salt( 'auth' );
 		}
 
@@ -746,7 +704,7 @@ class Config {
 	 *
 	 * @return string Cache key prefix
 	 */
-	public function getCachePrefix() {
+	public function getCachePrefix(): string {
 		return $this->option_prefix . 'github_cache_';
 	}
 
@@ -756,7 +714,7 @@ class Config {
 	 *
 	 * @return int Cache duration in seconds
 	 */
-	public function getCacheDuration() {
+	public function getCacheDuration(): int {
 		// Fixed 1-minute cache as per requirements
 		return 60;
 	}

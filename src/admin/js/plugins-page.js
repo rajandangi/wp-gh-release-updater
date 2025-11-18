@@ -14,37 +14,28 @@
 	}
 
 	function init() {
+		// Get plugin slug from localized data
+		const slug = window.pluginUpdaterConfig?.slug;
+
+		if (!slug) {
+			console.error('Plugin slug not provided');
+			return;
+		}
+
 		// Delegate click events for "Check for Updates" links
 		document.addEventListener('click', (e) => {
-			const link = e.target.closest('[class*="-check-updates"]');
+			const link = e.target.closest(`.${slug}-check-updates`);
 			if (!link) return;
 
 			e.preventDefault();
-			handleCheckUpdates(link);
+			handleCheckUpdates(link, slug);
 		});
 	}
 
-	function handleCheckUpdates(link) {
+	function handleCheckUpdates(link, slug) {
 		const plugin = link.getAttribute('data-plugin');
 		const nonce = link.getAttribute('data-nonce');
 		const originalText = link.textContent;
-
-		// Extract plugin slug from class name (e.g., "my-plugin-check-updates" -> "my-plugin")
-		const classList = link.className.split(' ');
-		let slug = null;
-
-		for (const className of classList) {
-			const match = className.match(/^(.+)-check-updates$/);
-			if (match) {
-				slug = match[1];
-				break;
-			}
-		}
-
-		if (!slug) {
-			console.error('Could not determine plugin slug from class name');
-			return;
-		}
 
 		const ajaxAction = `${slug}_check_updates_quick`;
 
@@ -65,7 +56,16 @@
 			credentials: 'same-origin',
 			body: formData,
 		})
-			.then((response) => response.json())
+			.then((response) => {
+				if (!response.ok) {
+					throw new Error('Network response was not ok');
+				}
+				const contentType = response.headers.get('content-type');
+				if (!contentType || !contentType.includes('application/json')) {
+					throw new Error('Server returned non-JSON response');
+				}
+				return response.json();
+			})
 			.then((data) => {
 				if (data.success) {
 					// Show success message
@@ -85,8 +85,7 @@
 					}
 				} else {
 					// Show error message
-					const errorMessage = data.data?.message ? data.data.message : 'Error checking for updates';
-					link.textContent = `✗ ${errorMessage}`;
+					link.textContent = `Check Failed`;
 					link.style.color = '#dc3232';
 
 					// Restore original text after 5 seconds
@@ -97,7 +96,7 @@
 			})
 			.catch((error) => {
 				console.error('AJAX error:', error);
-				link.textContent = `✗ ${error.message}`;
+				link.textContent = `Check Failed`;
 				link.style.color = '#dc3232';
 
 				// Restore original text after 5 seconds
