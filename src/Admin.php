@@ -19,38 +19,22 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Admin {
 
 	/**
-	 * Config instance
-	 *
-	 * @var Config
-	 */
-	private $config;
-
-	/**
-	 * GitHub API instance
-	 *
-	 * @var GitHubAPI
-	 */
-	private $github_api;
-
-	/**
-	 * Updater instance
-	 *
-	 * @var Updater
-	 */
-	private $updater;
-
-	/**
 	 * Constructor
 	 *
 	 * @param Config    $config Configuration instance.
 	 * @param GitHubAPI $github_api GitHub API instance.
 	 * @param Updater   $updater Updater instance.
 	 */
-	public function __construct( $config, $github_api, $updater ) {
-		$this->config     = $config;
-		$this->github_api = $github_api;
-		$this->updater    = $updater;
-
+	public function __construct( /**
+  * Config instance
+  */
+ private $config, /**
+  * GitHub API instance
+  */
+ private $github_api, /**
+  * Updater instance
+  */
+ private $updater ) {
 		$this->initHooks();
 	}
 
@@ -58,19 +42,19 @@ class Admin {
 	 * Initialize WordPress hooks
 	 */
 	private function initHooks(): void {
-		add_action( 'admin_menu', array( $this, 'addAdminMenu' ) );
-		add_action( 'admin_init', array( $this, 'registerSettings' ) );
-		add_action( 'admin_enqueue_scripts', array( $this, 'enqueueScripts' ) );
-		add_action( 'admin_notices', array( $this, 'showAdminNotices' ) );
+		add_action( 'admin_menu', $this->addAdminMenu(...) );
+		add_action( 'admin_init', $this->registerSettings(...) );
+		add_action( 'admin_enqueue_scripts', $this->enqueueScripts(...) );
+		add_action( 'admin_notices', $this->showAdminNotices(...) );
 
 		// Plugin action links on plugins page
 		$plugin_basename = $this->config->getPluginBasename();
-		add_filter( 'plugin_action_links_' . $plugin_basename, array( $this, 'addPluginActionLinks' ) );
-		add_filter( 'network_admin_plugin_action_links_' . $plugin_basename, array( $this, 'addPluginActionLinks' ) );
+		add_filter( 'plugin_action_links_' . $plugin_basename, $this->addPluginActionLinks(...) );
+		add_filter( 'network_admin_plugin_action_links_' . $plugin_basename, $this->addPluginActionLinks(...) );
 
 		// AJAX handlers
-		add_action( 'wp_ajax_' . $this->config->getPluginSlug() . '_check_updates_quick', array( $this, 'ajaxQuickCheckForUpdates' ) );
-		add_action( 'wp_ajax_' . $this->config->getAjaxTestRepoAction(), array( $this, 'ajaxTestRepository' ) );
+		add_action( 'wp_ajax_' . $this->config->getPluginSlug() . '_check_updates_quick', $this->ajaxQuickCheckForUpdates(...) );
+		add_action( 'wp_ajax_' . $this->config->getAjaxTestRepoAction(), $this->ajaxTestRepository(...) );
 	}
 
 	/**
@@ -82,7 +66,7 @@ class Admin {
 			$this->config->getMenuTitle(),
 			$this->config->getCapability(),
 			$this->config->getSettingsPageSlug(),
-			array( $this, 'displaySettingsPage' )
+			$this->displaySettingsPage(...)
 		);
 	}
 
@@ -93,28 +77,20 @@ class Admin {
 		register_setting(
 			$this->config->getSettingsGroup(),
 			$this->config->getOptionName( 'repository_url' ),
-			array(
-				'type'              => 'string',
-				'sanitize_callback' => array( $this, 'sanitizeRepositoryUrl' ),
-				'default'           => '',
-			)
+			['type'              => 'string', 'sanitize_callback' => $this->sanitizeRepositoryUrl(...), 'default'           => '']
 		);
 
 		register_setting(
 			$this->config->getSettingsGroup(),
 			$this->config->getOptionName( 'access_token' ),
-			array(
-				'type'              => 'string',
-				'sanitize_callback' => array( $this, 'sanitizeAccessToken' ),
-				'default'           => '',
-			)
+			['type'              => 'string', 'sanitize_callback' => $this->sanitizeAccessToken(...), 'default'           => '']
 		);
 
 		// Add settings sections
 		add_settings_section(
 			$this->config->getSettingsSection(),
 			'Repository Configuration',
-			array( $this, 'settingsSectionCallback' ),
+			$this->settingsSectionCallback(...),
 			$this->config->getSettingsPageSlug()
 		);
 
@@ -122,7 +98,7 @@ class Admin {
 		add_settings_field(
 			'repository_url',
 			'Repository URL',
-			array( $this, 'repositoryUrlFieldCallback' ),
+			$this->repositoryUrlFieldCallback(...),
 			$this->config->getSettingsPageSlug(),
 			$this->config->getSettingsSection()
 		);
@@ -131,7 +107,7 @@ class Admin {
 		add_settings_field(
 			'access_token',
 			'Access Token',
-			array( $this, 'accessTokenFieldCallback' ),
+			$this->accessTokenFieldCallback(...),
 			$this->config->getSettingsPageSlug(),
 			$this->config->getSettingsSection()
 		);
@@ -145,12 +121,20 @@ class Admin {
 	public function enqueueScripts( $hook ): void {
 		// Enqueue plugins page script (for "Check for Updates" link)
 		if ( 'plugins.php' === $hook ) {
+			$script_handle = $this->config->getPluginSlug() . '-plugins-page';
 			wp_enqueue_script(
-				$this->config->getPluginSlug() . '-plugins-page',
+				$script_handle,
 				$this->config->getUpdaterUrl() . 'admin/js/plugins-page.js',
-				array(),
+				[],
 				$this->config->getPluginVersion(),
 				true
+			);
+
+			// Pass plugin slug to JavaScript
+			wp_localize_script(
+				$script_handle,
+				'pluginUpdaterConfig',
+				['slug' => $this->config->getPluginSlug()]
 			);
 			return;
 		}
@@ -166,7 +150,7 @@ class Admin {
 		wp_enqueue_style(
 			$this->config->getStyleHandle(),
 			$this->config->getUpdaterUrl() . 'admin/css/admin.css',
-			array(),
+			[],
 			$this->config->getPluginVersion()
 		);
 
@@ -176,7 +160,7 @@ class Admin {
 		wp_enqueue_script(
 			$script_handle,
 			$script_url,
-			array(),
+			[],
 			$this->config->getPluginVersion(),
 			true
 		);
@@ -187,23 +171,7 @@ class Admin {
 		wp_localize_script(
 			$this->config->getScriptHandle(),
 			$js_var_name,
-			array(
-				'ajaxUrl'    => admin_url( 'admin-ajax.php' ),
-				'nonce'      => wp_create_nonce( $this->config->getNonceName() ),
-				'actions'    => array(
-					'testRepo' => $this->config->getAjaxTestRepoAction(),
-				),
-				'strings'    => array(
-					'checking'       => 'Checking for updates...',
-					'updating'       => 'Updating plugin...',
-					'testing'        => 'Testing repository access...',
-					'error'          => 'An error occurred. Please try again.',
-					'confirm_update' => 'Are you sure you want to update the plugin? This action cannot be undone.',
-					'success'        => 'Operation completed successfully.',
-				),
-				'pluginSlug' => $this->config->getPluginSlug(),
-				'varName'    => $js_var_name, // Pass variable name to JS for debugging
-			)
+			['ajaxUrl'    => admin_url( 'admin-ajax.php' ), 'nonce'      => wp_create_nonce( $this->config->getNonceName() ), 'actions'    => ['testRepo' => $this->config->getAjaxTestRepoAction()], 'strings'    => ['checking'       => 'Checking for updates...', 'updating'       => 'Updating plugin...', 'testing'        => 'Testing repository access...', 'error'          => 'An error occurred. Please try again.', 'confirm_update' => 'Are you sure you want to update the plugin? This action cannot be undone.', 'success'        => 'Operation completed successfully.'], 'pluginSlug' => $this->config->getPluginSlug(), 'varName'    => $js_var_name]
 		);
 	}
 
@@ -278,7 +246,7 @@ class Admin {
 		}
 
 		// If empty, delete the token
-		if ( empty( trim( $token ) ) ) {
+		if ( in_array(trim( $token ), ['', '0'], true) ) {
 			return '';
 		}
 
@@ -319,10 +287,7 @@ class Admin {
 			$test_api->setRepository( $matches[1], $matches[2], $access_token );
 		} else {
 			wp_send_json(
-				array(
-					'success' => false,
-					'message' => 'Invalid repository URL format.',
-				)
+				['success' => false, 'message' => 'Invalid repository URL format.']
 			);
 			return;
 		}
@@ -331,17 +296,11 @@ class Admin {
 
 		if ( is_wp_error( $test_result ) ) {
 			wp_send_json(
-				array(
-					'success' => false,
-					'message' => $test_result->get_error_message(),
-				)
+				['success' => false, 'message' => $test_result->get_error_message()]
 			);
 		} else {
 			wp_send_json(
-				array(
-					'success' => true,
-					'message' => 'Repository access successful!',
-				)
+				['success' => true, 'message' => 'Repository access successful!']
 			);
 		}
 	}
@@ -383,16 +342,8 @@ class Admin {
 	 *
 	 * @return array Status information
 	 */
-	public function getPluginStatus() {
-		return array(
-			'current_version'       => $this->config->getPluginVersion(),
-			'latest_version'        => $this->config->getOption( 'latest_version', '' ),
-			'update_available'      => $this->config->getOption( 'update_available', false ),
-			'last_checked'          => $this->config->getOption( 'last_checked', 0 ),
-			'repository_configured' => ! empty( $this->config->getOption( 'repository_url', '' ) ),
-			'last_log'              => $this->updater->getLastLog(),
-			'has_cached_data'       => $this->github_api->hasCachedData(),
-		);
+	public function getPluginStatus(): array {
+		return ['current_version'       => $this->config->getPluginVersion(), 'latest_version'        => $this->config->getOption( 'latest_version', '' ), 'update_available'      => $this->config->getOption( 'update_available', false ), 'last_checked'          => $this->config->getOption( 'last_checked', 0 ), 'repository_configured' => ! empty( $this->config->getOption( 'repository_url', '' ) ), 'last_log'              => $this->updater->getLastLog(), 'has_cached_data'       => $this->github_api->hasCachedData()];
 	}
 
 	/**
@@ -415,7 +366,7 @@ class Admin {
 	 * @param array $status Plugin status
 	 * @return string Status message
 	 */
-	public function getStatusMessage( $status ) {
+	public function getStatusMessage( $status ): string {
 		if ( ! $status['repository_configured'] ) {
 			return 'Repository not configured';
 		}
@@ -441,7 +392,7 @@ class Admin {
 	 * @param array $status Plugin status
 	 * @return string CSS class
 	 */
-	public function getStatusBadgeClass( $status ) {
+	public function getStatusBadgeClass( $status ): string {
 		if ( ! $status['repository_configured'] || empty( $status['latest_version'] ) ) {
 			return 'badge-warning';
 		}
@@ -459,7 +410,7 @@ class Admin {
 	 * @param array $links Existing plugin action links
 	 * @return array Modified links
 	 */
-	public function addPluginActionLinks( $links ) {
+	public function addPluginActionLinks( $links ): array {
 		$check_updates_link = sprintf(
 			'<a href="#" class="%s-check-updates" data-plugin="%s" data-nonce="%s">%s</a>',
 			esc_attr( $this->config->getPluginSlug() ),
@@ -469,21 +420,19 @@ class Admin {
 		);
 
 		// Add as first link (before Deactivate)
-		return array_merge( array( 'check_updates' => $check_updates_link ), $links );
+		return array_merge( ['check_updates' => $check_updates_link], $links );
 	}
 
 	/**
-	 * Handle quick update check from plugins page (AJAX)
-	 *
-	 * @return void
-	 */
-	public function ajaxQuickCheckForUpdates() {
+  * Handle quick update check from plugins page (AJAX)
+  */
+ public function ajaxQuickCheckForUpdates(): void {
 		// Verify nonce
 		check_ajax_referer( $this->config->getPluginSlug() . '_check_updates_quick', 'nonce' );
 
 		// Check permissions
 		if ( ! current_user_can( 'update_plugins' ) ) {
-			wp_send_json_error( array( 'message' => 'Insufficient permissions.' ) );
+			wp_send_json_error( ['message' => 'Insufficient permissions.'] );
 		}
 
 		// Clear cache first
@@ -495,14 +444,10 @@ class Admin {
 
 		if ( $result['success'] ) {
 			wp_send_json_success(
-				array(
-					'message'          => $result['message'],
-					'update_available' => $result['update_available'],
-					'latest_version'   => $result['latest_version'],
-				)
+				['message'          => $result['message'], 'update_available' => $result['update_available'], 'latest_version'   => $result['latest_version']]
 			);
 		} else {
-			wp_send_json_error( array( 'message' => $result['message'] ) );
+			wp_send_json_error( ['message' => $result['message']] );
 		}
 	}
 }
