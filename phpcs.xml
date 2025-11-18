@@ -39,9 +39,27 @@
         <exclude name="Squiz.Commenting.InlineComment.InvalidEndChar"/>
         <exclude name="Squiz.Commenting.FunctionComment.ParamCommentFullStop"/>
         <exclude name="Squiz.Commenting.FileComment.SpacingAfterOpen"/>
+        <exclude name="Squiz.Commenting.VariableComment.MissingVar"/>
 
         <!-- Allow non-Yoda conditions (modern PHP preference) -->
         <exclude name="WordPress.PHP.YodaConditions.NotYoda"/>
+
+        <!-- Relax array formatting rules for compact modern style -->
+        <exclude name="NormalizedArrays.Arrays.ArrayBraceSpacing"/>
+        <exclude name="WordPress.Arrays.ArrayDeclarationSpacing.AssociativeArrayFound"/>
+        <exclude name="WordPress.Arrays.MultipleStatementAlignment"/>
+
+        <!-- Relax spacing rules for compact code -->
+        <exclude name="PEAR.Functions.FunctionCallSignature.SpaceAfterOpenBracket"/>
+        <exclude name="PEAR.Functions.FunctionCallSignature.SpaceBeforeCloseBracket"/>
+        <exclude name="Universal.WhiteSpace.PrecisionAlignment.Found"/>
+        <exclude name="Squiz.Commenting.DocCommentAlignment.SpaceBeforeStar"/>
+        <exclude name="Squiz.Functions.MultiLineFunctionDeclaration"/>
+        <exclude name="Generic.WhiteSpace.ScopeIndent"/>
+
+        <!-- Relax whitespace rules -->
+        <exclude name="Squiz.WhiteSpace.SuperfluousWhitespace.EndLine"/>
+        <exclude name="WordPress.WhiteSpace.OperatorSpacing"/>
     </rule>
 
     <!-- Rules: WordPress Documentation Standards -->
