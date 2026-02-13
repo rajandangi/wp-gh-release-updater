@@ -116,6 +116,26 @@ class GitHubAPI {
 	}
 
 	/**
+	 * Configure repository and token from repository URL input.
+	 *
+	 * Supports:
+	 * - owner/repo
+	 * - https://github.com/owner/repo
+	 *
+	 * @param string $repository_url Repository URL or owner/repo.
+	 * @param string $token Optional access token.
+	 * @return bool True when repository format is valid.
+	 */
+	public function setRepositoryFromUrl( string $repository_url, string $token = '' ): bool {
+		if ( ! $this->parseRepositoryUrl( $repository_url ) ) {
+			return false;
+		}
+
+		$this->access_token = trim( $token );
+		return true;
+	}
+
+	/**
 	 * Get latest release from GitHub
 	 *
 	 * @return array|WP_Error Release data or error
@@ -188,6 +208,18 @@ class GitHubAPI {
 		$response = wp_remote_get( $url, $args );
 
 		if ( is_wp_error( $response ) ) {
+			Logger::log(
+				$this->config,
+				'ERROR',
+				'GitHubAPI',
+				'HTTP transport error while calling GitHub API.',
+				array(
+					'url'   => $url,
+					'code'  => $response->get_error_code(),
+					'error' => $response->get_error_message(),
+				)
+			);
+
 			return $response;
 		}
 
@@ -199,6 +231,18 @@ class GitHubAPI {
 			case 200:
 				$data = json_decode( $body, true );
 				if ( json_last_error() !== JSON_ERROR_NONE ) {
+					Logger::log(
+						$this->config,
+						'ERROR',
+						'GitHubAPI',
+						'GitHub API returned invalid JSON.',
+						array(
+							'url'        => $url,
+							'status'     => $response_code,
+							'request_id' => wp_remote_retrieve_header( $response, 'x-github-request-id' ),
+						)
+					);
+
 					return new \WP_Error( 'json_error', 'Invalid JSON response from GitHub API' );
 				}
 
@@ -208,22 +252,85 @@ class GitHubAPI {
 				return $data;
 
 			case 401:
+				Logger::log(
+					$this->config,
+					'WARN',
+					'GitHubAPI',
+					'GitHub API authentication failed.',
+					array(
+						'url'        => $url,
+						'status'     => $response_code,
+						'request_id' => wp_remote_retrieve_header( $response, 'x-github-request-id' ),
+					)
+				);
+
 				return new \WP_Error( 'unauthorized', 'GitHub API authentication failed. Check your access token.' );
 
 			case 403:
 				$rate_limit_remaining = wp_remote_retrieve_header( $response, 'x-ratelimit-remaining' );
 				if ( $rate_limit_remaining === '0' ) {
+					Logger::log(
+						$this->config,
+						'WARN',
+						'GitHubAPI',
+						'GitHub API rate limit exceeded.',
+						array(
+							'url'                  => $url,
+							'status'               => $response_code,
+							'rate_limit_remaining' => $rate_limit_remaining,
+							'request_id'           => wp_remote_retrieve_header( $response, 'x-github-request-id' ),
+						)
+					);
+
 					$error = new \WP_Error( 'rate_limit', 'GitHub API rate limit exceeded. Try again later.' );
 					// Cache rate limit errors for 1 hour
 					$this->setCachedResponse( $cache_key, $error, 3600 );
 					return $error;
 				}
+
+				Logger::log(
+					$this->config,
+					'WARN',
+					'GitHubAPI',
+					'GitHub API access forbidden.',
+					array(
+						'url'                  => $url,
+						'status'               => $response_code,
+						'rate_limit_remaining' => $rate_limit_remaining,
+						'request_id'           => wp_remote_retrieve_header( $response, 'x-github-request-id' ),
+					)
+				);
+
 				return new \WP_Error( 'forbidden', 'Access to GitHub repository is forbidden.' );
 
 			case 404:
+				Logger::log(
+					$this->config,
+					'WARN',
+					'GitHubAPI',
+					'GitHub repository or release not found.',
+					array(
+						'url'        => $url,
+						'status'     => $response_code,
+						'request_id' => wp_remote_retrieve_header( $response, 'x-github-request-id' ),
+					)
+				);
+
 				return new \WP_Error( 'not_found', 'GitHub repository or release not found.' );
 
 			default:
+				Logger::log(
+					$this->config,
+					$response_code >= 500 ? 'ERROR' : 'WARN',
+					'GitHubAPI',
+					'Unexpected GitHub API response status.',
+					array(
+						'url'        => $url,
+						'status'     => $response_code,
+						'request_id' => wp_remote_retrieve_header( $response, 'x-github-request-id' ),
+					)
+				);
+
 				return new \WP_Error(
 					'api_error',
 					sprintf( 'GitHub API request failed with status code: %d', $response_code )

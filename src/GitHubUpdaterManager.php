@@ -66,6 +66,13 @@ class GitHubUpdaterManager {
 	private $initialized = false;
 
 	/**
+	 * CLI instance.
+	 *
+	 * @var CLI|null
+	 */
+	private $cli;
+
+	/**
 	 * Constructor
 	 *
 	 * Plugin info (including slug) is automatically extracted from your plugin file!
@@ -79,6 +86,7 @@ class GitHubUpdaterManager {
 	 *   Optional:
 	 *     - menu_parent: string (default: 'tools.php')
 	 *     - capability: string (default: 'manage_options')
+	 *     - cli_command: string (default: '<plugin-directory>')
 	 */
 	public function __construct( $config_options = array() ) {
 		// Extract plugin file
@@ -117,8 +125,8 @@ class GitHubUpdaterManager {
 			return;
 		}
 
-		// Only load in admin area
-		if ( ! is_admin() ) {
+		// Load in admin area or WP-CLI context
+		if ( ! is_admin() && ! $this->isCliContext() ) {
 			return;
 		}
 
@@ -155,7 +163,24 @@ class GitHubUpdaterManager {
 		$this->updater = new Updater( $this->config, $this->github_api );
 
 		// Initialize Admin interface
-		$this->admin = new Admin( $this->config, $this->github_api, $this->updater );
+		if ( is_admin() ) {
+			$this->admin = new Admin( $this->config, $this->github_api, $this->updater );
+		}
+
+		// Register WP-CLI commands
+		if ( $this->isCliContext() ) {
+			$this->cli = new CLI( $this->config, $this->updater );
+			$this->cli->register();
+		}
+	}
+
+	/**
+	 * Check whether execution context is WP-CLI.
+	 *
+	 * @return bool
+	 */
+	private function isCliContext(): bool {
+		return defined( 'WP_CLI' ) && (bool) constant( 'WP_CLI' ) && class_exists( '\\WP_CLI' );
 	}
 
 	/**
@@ -265,6 +290,15 @@ class GitHubUpdaterManager {
 	 */
 	public function getAdmin() {
 		return $this->admin;
+	}
+
+	/**
+	 * Get CLI instance.
+	 *
+	 * @return CLI|null
+	 */
+	public function getCLI() {
+		return $this->cli;
 	}
 
 	/**

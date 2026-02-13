@@ -82,6 +82,7 @@ register_deactivation_hook(__FILE__, function() {
 **Optional Parameters:**
 - `menu_parent` (string) - Parent menu location (default: `'tools.php'`)
 - `capability` (string) - Required capability (default: `'manage_options'`)
+- `cli_command` (string) - Base WP-CLI command path (default: `<plugin-directory>`)
 
 ### How Auto-Detection Works
 
@@ -107,6 +108,55 @@ Complete isolation between multiple plugins guaranteed!
 4. Click **Test Repository Access** to verify
 5. Click **Check for Updates** to see available versions
 6. Click **Update Now** to install
+
+### WP-CLI
+
+Each plugin instance registers a unique command path:
+
+```bash
+wp <plugin-directory> <command>
+```
+
+Available commands:
+
+- `test-repo` - same behavior as **Test Repository Access** in wp-admin
+- `check-updates` - checks GitHub for latest release and prints status
+- `update` - performs plugin update using WordPress upgrader flow
+
+Examples:
+
+```bash
+# Uses saved repository URL and saved token from plugin settings
+wp uwu-extensions-development test-repo
+
+# Check update status
+wp uwu-extensions-development check-updates
+
+# Perform update when available
+wp uwu-extensions-development update
+
+# Dry-run update flow (no upgrader execution)
+wp uwu-extensions-development update --dry
+
+# Override repository URL for one-off testing
+wp uwu-extensions-development test-repo --repository-url=owner/repo
+
+# Override token for one-off testing
+wp uwu-extensions-development test-repo --access-token=github_pat_xxx
+```
+
+`test-repo` performs the same repository access validation as **Test Repository Access** in the updater settings page.
+
+To customize the base command and avoid naming conflicts, pass `cli_command` when creating the manager:
+
+```php
+new GitHubUpdaterManager([
+    'plugin_file' => __FILE__,
+    'menu_title'  => 'GitHub Updater',
+    'page_title'  => 'Plugin Updates',
+    'cli_command' => 'my-plugin-updater',
+]);
+```
 
 ### For Developers
 

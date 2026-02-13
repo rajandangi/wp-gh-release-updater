@@ -18,6 +18,14 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Updater {
 
 	/**
+	 * Priority for the temporary GitHub auth request filter.
+	 *
+	 * High priority helps prevent other plugins from overriding
+	 * Authorization headers during update downloads.
+	 */
+	private const AUTH_FILTER_PRIORITY = 999;
+
+	/**
 	 * Config instance
 	 *
 	 * @var Config
@@ -83,7 +91,7 @@ class Updater {
 
 			if ( is_wp_error( $release_data ) ) {
 				$result['message'] = $release_data->get_error_message();
-				$this->logAction( 'Check', 'Failure', $result['message'] );
+				Logger::log( $this->config, 'ERROR', 'Updater', $result['message'], array( 'action' => 'Check' ) );
 				return $result;
 			}
 
@@ -96,7 +104,6 @@ class Updater {
 					'Latest release (%s) is a pre-release. Enable "Include Pre-releases" to use it.',
 					$release_data['tag_name']
 				);
-				$this->logAction( 'Check', 'Success', $result['message'] );
 				return $result;
 			}
 
@@ -104,7 +111,7 @@ class Updater {
 
 			if ( empty( $latest_version ) ) {
 				$result['message'] = 'Could not extract version from release tag: ' . $release_data['tag_name'];
-				$this->logAction( 'Check', 'Failure', $result['message'] );
+				Logger::log( $this->config, 'ERROR', 'Updater', $result['message'], array( 'action' => 'Check' ) );
 				return $result;
 			}
 
@@ -136,14 +143,28 @@ class Updater {
 				'html_url'     => $release_data['html_url'] ?? '',
 			);
 			$this->config->updateOption( 'release_snapshot', $release_snapshot );
-			$this->logAction( 'Check', 'Success', $result['message'] );
 
 		} catch ( \Exception $e ) {
 			$result['message'] = 'Error checking for updates: ' . $e->getMessage();
-			$this->logAction( 'Check', 'Failure', $result['message'] );
+			Logger::log( $this->config, 'ERROR', 'Updater', $result['message'], array( 'action' => 'Check' ) );
 		}
 
 		return $result;
+	}
+
+	/**
+	 * Check for updates after clearing updater cache.
+	 *
+	 * This is used by admin quick check and CLI so both entry points
+	 * execute the same check workflow.
+	 *
+	 * @return array Update check result
+	 */
+	public function checkForUpdatesFresh() {
+		$this->github_api->clearCache();
+		delete_site_transient( 'update_plugins' );
+
+		return $this->checkForUpdates();
 	}
 
 	/**
@@ -234,93 +255,6 @@ class Updater {
 	}
 
 	/**
-	 * Perform plugin update
-	 *
-	 * @return array Update result
-	 */
-	public function performUpdate() {
-		$result = array(
-			'success'      => false,
-			'message'      => '',
-			'redirect_url' => '',
-		);
-
-		try {
-			// Check for concurrent update attempts (locking mechanism)
-			$lock_key = 'update_in_progress_' . md5( $this->config->getPluginBasename() );
-			if ( get_transient( $lock_key ) ) {
-				$result['message'] = 'Update already in progress. Please wait for the current update to complete.';
-				return $result;
-			}
-
-			// Set lock (1 minute expiration)
-			set_transient( $lock_key, time(), 60 );
-
-			// Check if update is available
-			$latest_version   = $this->config->getOption( 'latest_version', '' );
-			$update_available = $this->config->getOption( 'update_available', false );
-			$release_snapshot = $this->config->getOption( 'release_snapshot', array() );
-
-			if ( ! $update_available || empty( $latest_version ) ) {
-				delete_transient( $lock_key );
-				$result['message'] = 'No update available. Please check for updates first.';
-				return $result;
-			}
-
-			// Verify we have a valid release snapshot
-			if ( empty( $release_snapshot ) || empty( $release_snapshot['version'] ) ) {
-				delete_transient( $lock_key );
-				$result['message'] = 'Invalid release data. Please check for updates again.';
-				return $result;
-			}
-
-			// Use snapshot data directly - no need to fetch fresh data
-			// The snapshot was already validated during check
-			$release_data = $release_snapshot;
-
-			// Resolve package URL from GitHub assets
-			$package_url = $this->findDownloadAsset( $release_data );           if ( empty( $package_url ) ) {
-				delete_transient( $lock_key );
-				$result['message'] = 'No suitable download asset found in the release.';
-				$this->logAction( 'Download', 'Failure', $result['message'] );
-				return $result;
-			}
-
-			// No need to manually register update - it's now injected via the injectUpdateInfo filter
-			// This ensures the update is always available when WordPress checks the transient
-
-			// Build the WordPress native update URL with fresh nonce
-			$plugin_basename = $this->config->getPluginBasename();
-			$update_url      = add_query_arg(
-				array(
-					'action'   => 'upgrade-plugin',
-					'plugin'   => $plugin_basename,
-					'_wpnonce' => wp_create_nonce( 'upgrade-plugin_' . $plugin_basename ),
-				),
-				self_admin_url( 'update.php' )
-			);
-
-			// Lock will be released after update completes via clearCacheAfterUpdate hook
-			// or automatically expires after 1 minute
-
-			$result['success']      = true;
-			$result['redirect_url'] = $update_url;
-			$result['message']      = 'Redirecting to WordPress update screen...';
-			$this->logAction( 'Update', 'Initiated', 'Redirecting to WordPress update screen for version ' . $latest_version );
-
-		} catch ( \Exception $e ) {
-			// Release lock on error
-			$lock_key = 'update_in_progress_' . md5( $this->config->getPluginBasename() );
-			delete_transient( $lock_key );
-
-			$result['message'] = 'Update failed: ' . $e->getMessage();
-			$this->logAction( 'Update', 'Failure', $result['message'] );
-		}
-
-		return $result;
-	}
-
-	/**
 	 * Enable auth filter when update transient is being set.
 	 * This ensures authentication is available during the entire update process.
 	 *
@@ -333,17 +267,13 @@ class Updater {
 
 		if ( is_object( $transient ) && isset( $transient->response[ $plugin_basename ] ) ) {
 			// Our plugin has an update - enable auth filter
-			if ( ! has_filter( 'http_request_args', array( $this, 'httpAuthForGitHub' ) ) ) {
-				add_filter( 'http_request_args', array( $this, 'httpAuthForGitHub' ), 10, 2 );
-			}
+			$this->enableGitHubAuthFilter();
 		}
 
 		// Also check if we're in an update process (admin page)
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Safe read-only check for upgrade action
 		if ( isset( $_GET['action'] ) && $_GET['action'] === 'upgrade-plugin' ) {
-			if ( ! has_filter( 'http_request_args', array( $this, 'httpAuthForGitHub' ) ) ) {
-				add_filter( 'http_request_args', array( $this, 'httpAuthForGitHub' ), 10, 2 );
-			}
+			$this->enableGitHubAuthFilter();
 		}
 
 		return $transient;
@@ -361,12 +291,21 @@ class Updater {
 		// Check if this is a GitHub URL
 		if ( is_string( $package ) && strpos( $package, 'github' ) !== false ) {
 			// Enable auth filter for this download
-			if ( ! has_filter( 'http_request_args', array( $this, 'httpAuthForGitHub' ) ) ) {
-				add_filter( 'http_request_args', array( $this, 'httpAuthForGitHub' ), 10, 2 );
-			}
+			$this->enableGitHubAuthFilter();
 		}
 
 		return $reply;
+	}
+
+	/**
+	 * Enable temporary GitHub authorization request filter.
+	 *
+	 * @return void
+	 */
+	private function enableGitHubAuthFilter(): void {
+		if ( false === has_filter( 'http_request_args', array( $this, 'httpAuthForGitHub' ) ) ) {
+			add_filter( 'http_request_args', array( $this, 'httpAuthForGitHub' ), self::AUTH_FILTER_PRIORITY, 2 );
+		}
 	}
 
 	/**
@@ -378,21 +317,13 @@ class Updater {
 	 * @return array Modified args
 	 */
 	public function httpAuthForGitHub( $args, $url ) {
-		// Get decrypted token using Config's method
-		$token = $this->config->getAccessToken();
-		if ( empty( $token ) ) {
-			return $args;
-		}
-
-		// Validate token format (basic check)
-		if ( ! $this->isValidGitHubToken( $token ) ) {
-			return $args;
-		}
-
 		$host = wp_parse_url( $url, PHP_URL_HOST );
 		if ( ! $host ) {
 			return $args;
 		}
+
+		$host             = strtolower( $host );
+		$is_asset_request = false !== strpos( (string) $url, '/releases/assets/' );
 
 		// Strict host validation - ONLY exact GitHub domains
 		// This prevents token leaks to domains like "my-github.com"
@@ -400,11 +331,37 @@ class Updater {
 			'github.com',
 			'api.github.com',
 			'codeload.github.com',
+			'objects.githubusercontent.com',
+			'release-assets.githubusercontent.com',
 			'githubusercontent.com',
 			'raw.githubusercontent.com',
 		);
 
-		if ( ! in_array( strtolower( $host ), $valid_github_hosts, true ) ) {
+		if ( ! in_array( $host, $valid_github_hosts, true ) ) {
+			if ( $is_asset_request ) {
+				Logger::log( $this->config, 'WARN', 'Updater', 'Authorization header not added for asset download. Host not in allowlist.', array( 'action' => 'Auth', 'host' => $host ) );
+			}
+
+			return $args;
+		}
+
+		// Get decrypted token using Config's method
+		$token = trim( (string) $this->config->getAccessToken() );
+		if ( '' === $token ) {
+			if ( $is_asset_request ) {
+				Logger::log( $this->config, 'WARN', 'Updater', 'Authorization header not added for asset download. Access token is empty.', array( 'action' => 'Auth' ) );
+			}
+
+			return $args;
+		}
+
+		// Reject obviously malformed token values while supporting
+		// all current GitHub token prefixes.
+		if ( preg_match( '/\s/', $token ) ) {
+			if ( $is_asset_request ) {
+				Logger::log( $this->config, 'WARN', 'Updater', 'Authorization header not added for asset download. Access token contains whitespace.', array( 'action' => 'Auth' ) );
+			}
+
 			return $args;
 		}
 
@@ -412,7 +369,7 @@ class Updater {
 		if ( ! isset( $args['headers'] ) ) {
 			$args['headers'] = array();
 		}
-		$args['headers']['Authorization'] = 'token ' . $token;
+		$args['headers']['Authorization'] = 'Bearer ' . $token;
 
 		// For GitHub API asset downloads, force the octet-stream Accept header
 		if ( strpos( $url, 'api.github.com' ) !== false && strpos( $url, '/releases/assets/' ) !== false ) {
@@ -426,27 +383,6 @@ class Updater {
 		$args['redirection'] = 5;
 
 		return $args;
-	}
-
-	/**
-	 * Validate GitHub token format
-	 *
-	 * @param string $token GitHub token
-	 * @return bool True if valid format
-	 */
-	private function isValidGitHubToken( $token ) {
-		// GitHub tokens are alphanumeric with underscores, typically 40+ chars
-		// Classic tokens: 40 chars, Fine-grained: starts with 'github_pat_'
-		if ( strlen( $token ) < 20 ) {
-			return false;
-		}
-
-		// Check for valid characters only
-		if ( ! preg_match( '/^[a-zA-Z0-9_]+$/', $token ) ) {
-			return false;
-		}
-
-		return true;
 	}
 
 	/**
@@ -513,7 +449,7 @@ class Updater {
 		if ( empty( $release_data['assets'] ) ) {
 			// No assets uploaded - this is an error
 			// We don't use zipball as it includes source code, tests, etc.
-			$this->logAction( 'Download', 'Failure', 'No assets found in release. Please upload a proper build ZIP file.' );
+			Logger::log( $this->config, 'ERROR', 'Updater', 'No assets found in release. Please upload a proper build ZIP file.', array( 'action' => 'Download' ) );
 			return '';
 		}
 
@@ -543,12 +479,6 @@ class Updater {
 					// This is already in the correct format: /repos/{owner}/{repo}/releases/assets/{id}
 					$download_url = $asset['url'];
 
-					$this->logAction(
-						'Download',
-						'Success',
-						sprintf( 'Found matching asset: %s (using GitHub API URL)', $asset['name'] )
-					);
-
 					return apply_filters(
 						$this->config->getPluginSlug() . '_download_url',
 						$download_url,
@@ -567,14 +497,16 @@ class Updater {
 			$release_data['assets']
 		);
 
-		$this->logAction(
-			'Download',
-			'Failure',
+		Logger::log(
+			$this->config,
+			'ERROR',
+			'Updater',
 			sprintf(
 				'No matching asset found. Expected: %s.zip. Available: %s',
 				$prefix,
 				implode( ', ', $available_assets )
-			)
+			),
+			array( 'action' => 'Download' )
 		);
 
 		// Do NOT fall back to zipball - return error instead
@@ -590,34 +522,6 @@ class Updater {
 	private function isZipFile( $asset ) {
 		return 'application/zip' === $asset['content_type'] ||
 				'zip' === pathinfo( $asset['name'], PATHINFO_EXTENSION );
-	}
-
-	/**
-	 * Log action with timestamp
-	 *
-	 * @param string $action Action name (Check, Download, Install)
-	 * @param string $result Result (Success, Failure)
-	 * @param string $message Message
-	 */
-	private function logAction( $action, $result, $message ): void {
-		$log_entry = array(
-			'timestamp' => current_time( 'mysql' ),
-			'action'    => $action,
-			'result'    => $result,
-			'message'   => $message,
-		);
-
-		// Store only the most recent log entry
-		$this->config->updateOption( 'last_log', $log_entry );
-	}
-
-	/**
-	 * Get the last log entry
-	 *
-	 * @return array Log entry
-	 */
-	public function getLastLog() {
-		return $this->config->getOption( 'last_log', array() );
 	}
 
 	/**
@@ -639,37 +543,6 @@ class Updater {
 			unset( $transient->response[ $plugin_basename ] );
 			set_site_transient( 'update_plugins', $transient );
 		}
-	}
-
-	/**
-	 * Store plugin active status before update
-	 * This runs before the plugin is deactivated during update
-	 *
-	 * @param bool  $response Installation response (true on success, false on failure)
-	 * @param array $hook_extra Extra arguments passed to the hook
-	 * @return bool Unmodified return value
-	 */
-	public function storeActiveStatus( $response, $hook_extra ) {
-		$plugin_basename = $this->config->getPluginBasename();
-
-		// Store active status in multiple scenarios to ensure we catch it
-		if ( isset( $hook_extra['plugin'] ) && $hook_extra['plugin'] === $plugin_basename ) {
-			// Direct plugin update
-			$was_active = is_plugin_active( $plugin_basename );
-			set_transient( 'plugin_was_active_' . md5( $plugin_basename ), $was_active, HOUR_IN_SECONDS );
-
-			// Also store as option as backup
-			update_option( '_plugin_was_active_' . md5( $plugin_basename ), $was_active, false );
-		} elseif ( isset( $hook_extra['plugins'] ) && is_array( $hook_extra['plugins'] ) ) {
-			// Bulk update
-			if ( in_array( $plugin_basename, $hook_extra['plugins'], true ) ) {
-				$was_active = is_plugin_active( $plugin_basename );
-				set_transient( 'plugin_was_active_' . md5( $plugin_basename ), $was_active, HOUR_IN_SECONDS );
-				update_option( '_plugin_was_active_' . md5( $plugin_basename ), $was_active, false );
-			}
-		}
-
-		return $response;
 	}
 
 	/**
@@ -696,7 +569,7 @@ class Updater {
 			delete_transient( $lock_key );
 
 			// Remove auth filter after update completes
-			remove_filter( 'http_request_args', array( $this, 'httpAuthForGitHub' ), 10 );
+			remove_filter( 'http_request_args', array( $this, 'httpAuthForGitHub' ), self::AUTH_FILTER_PRIORITY );
 
 			// Clear the update cache after successful update
 			$this->clearUpdateCache();
@@ -704,8 +577,7 @@ class Updater {
 			// Clear GitHub API cache after successful update
 			$this->github_api->clearCache();
 
-			// Log success - WordPress handles reactivation automatically
-			$this->logAction( 'Update', 'Success', 'Plugin updated successfully. WordPress will handle reactivation.' );
+			// WordPress handles reactivation automatically.
 		}
 	}
 }

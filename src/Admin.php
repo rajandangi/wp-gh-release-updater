@@ -265,6 +265,14 @@ class Admin {
 		// Verify nonce and permissions
 		$nonce = isset( $_POST['nonce'] ) ? sanitize_text_field( wp_unslash( $_POST['nonce'] ) ) : '';
 		if ( ! wp_verify_nonce( $nonce, $this->config->getNonceName() ) || ! current_user_can( $this->config->getCapability() ) ) {
+			Logger::log(
+				$this->config,
+				'WARN',
+				'Admin',
+				'AJAX test-repository request failed security checks.',
+				['user_id'    => get_current_user_id(), 'has_nonce'  => '' !== $nonce ? 'yes' : 'no', 'has_access' => current_user_can( $this->config->getCapability() ) ? 'yes' : 'no']
+			);
+
 			wp_die( 'Security check failed' );
 		}
 
@@ -280,12 +288,7 @@ class Admin {
 		// Test with the provided settings
 		$test_api = new GitHubAPI( $this->config );
 
-		// Parse repository URL and remove .git suffix if present
-		if ( preg_match( '/^([a-zA-Z0-9_.-]+)\/([a-zA-Z0-9_.-]+)$/', $repository_url, $matches ) ) {
-			$test_api->setRepository( $matches[1], $matches[2], $access_token );
-		} elseif ( preg_match( '/github\.com\/([a-zA-Z0-9_.-]+)\/([a-zA-Z0-9_.-]+?)(?:\.git)?(?:\/)?$/', $repository_url, $matches ) ) {
-			$test_api->setRepository( $matches[1], $matches[2], $access_token );
-		} else {
+		if ( ! $test_api->setRepositoryFromUrl( $repository_url, $access_token ) ) {
 			wp_send_json(
 				['success' => false, 'message' => 'Invalid repository URL format.']
 			);
@@ -338,73 +341,6 @@ class Admin {
 	}
 
 	/**
-	 * Get current plugin status for display
-	 *
-	 * @return array Status information
-	 */
-	public function getPluginStatus(): array {
-		return ['current_version'       => $this->config->getPluginVersion(), 'latest_version'        => $this->config->getOption( 'latest_version', '' ), 'update_available'      => $this->config->getOption( 'update_available', false ), 'last_checked'          => $this->config->getOption( 'last_checked', 0 ), 'repository_configured' => ! empty( $this->config->getOption( 'repository_url', '' ) ), 'last_log'              => $this->updater->getLastLog(), 'has_cached_data'       => $this->github_api->hasCachedData()];
-	}
-
-	/**
-	 * Format timestamp for display
-	 *
-	 * @param int $timestamp Unix timestamp
-	 * @return string Formatted date
-	 */
-	public function formatTimestamp( $timestamp ) {
-		if ( empty( $timestamp ) ) {
-			return 'Never';
-		}
-
-		return date_i18n( get_option( 'date_format' ) . ' ' . get_option( 'time_format' ), $timestamp );
-	}
-
-	/**
-	 * Get update status message
-	 *
-	 * @param array $status Plugin status
-	 * @return string Status message
-	 */
-	public function getStatusMessage( $status ): string {
-		if ( ! $status['repository_configured'] ) {
-			return 'Repository not configured';
-		}
-
-		if ( empty( $status['latest_version'] ) ) {
-			return 'Update check required';
-		}
-
-		if ( $status['update_available'] ) {
-			return sprintf(
-				'Update available: %s → %s',
-				$status['current_version'],
-				$status['latest_version']
-			);
-		}
-
-		return 'Plugin is up to date';
-	}
-
-	/**
-	 * Get status badge CSS class
-	 *
-	 * @param array $status Plugin status
-	 * @return string CSS class
-	 */
-	public function getStatusBadgeClass( $status ): string {
-		if ( ! $status['repository_configured'] || empty( $status['latest_version'] ) ) {
-			return 'badge-warning';
-		}
-
-		if ( $status['update_available'] ) {
-			return 'badge-info';
-		}
-
-		return 'badge-success';
-	}
-
-	/**
 	 * Add "Check for Updates" action link on plugins page
 	 *
 	 * @param array $links Existing plugin action links
@@ -426,27 +362,39 @@ class Admin {
 	/**
   * Handle quick update check from plugins page (AJAX)
   */
- public function ajaxQuickCheckForUpdates(): void {
+	public function ajaxQuickCheckForUpdates(): void {
 		// Verify nonce
 		check_ajax_referer( $this->config->getPluginSlug() . '_check_updates_quick', 'nonce' );
 
 		// Check permissions
 		if ( ! current_user_can( 'update_plugins' ) ) {
+			Logger::log(
+				$this->config,
+				'WARN',
+				'Admin',
+				'AJAX quick-check denied due to insufficient permissions.',
+				['user_id' => get_current_user_id()]
+			);
+
 			wp_send_json_error( ['message' => 'Insufficient permissions.'] );
 		}
 
-		// Clear cache first
-		$this->github_api->clearCache();
-		delete_site_transient( 'update_plugins' );
-
-		// Perform update check
-		$result = $this->updater->checkForUpdates();
+		// Perform update check using shared workflow
+		$result = $this->updater->checkForUpdatesFresh();
 
 		if ( $result['success'] ) {
 			wp_send_json_success(
 				['message'          => $result['message'], 'update_available' => $result['update_available'], 'latest_version'   => $result['latest_version']]
 			);
 		} else {
+			Logger::log(
+				$this->config,
+				'WARN',
+				'Admin',
+				'AJAX quick-check returned updater failure.',
+				['message' => $result['message']]
+			);
+
 			wp_send_json_error( ['message' => $result['message']] );
 		}
 	}
