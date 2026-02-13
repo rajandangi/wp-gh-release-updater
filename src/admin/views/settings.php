@@ -10,7 +10,6 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-$plugin_status = $this->getPluginStatus();
 ?>
 
 <div class="wrap">
