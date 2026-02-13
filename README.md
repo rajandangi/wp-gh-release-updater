@@ -127,22 +127,22 @@ Examples:
 
 ```bash
 # Uses saved repository URL and saved token from plugin settings
-wp uwu-extensions-development test-repo
+wp mu-plugin-updater test-repo
 
 # Check update status
-wp uwu-extensions-development check-updates
+wp mu-plugin-updater check-updates
 
 # Perform update when available
-wp uwu-extensions-development update
+wp mu-plugin-updater update
 
 # Dry-run update flow (no upgrader execution)
-wp uwu-extensions-development update --dry
+wp mu-plugin-updater update --dry
 
 # Override repository URL for one-off testing
-wp uwu-extensions-development test-repo --repository-url=owner/repo
+wp mu-plugin-updater test-repo --repository-url=owner/repo
 
 # Override token for one-off testing
-wp uwu-extensions-development test-repo --access-token=github_pat_xxx
+wp mu-plugin-updater test-repo --access-token=github_pat_xxx
 ```
 
 `test-repo` performs the same repository access validation as **Test Repository Access** in the updater settings page.
