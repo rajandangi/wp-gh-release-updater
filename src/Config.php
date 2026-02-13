@@ -200,7 +200,7 @@ class Config {
 		if ( ! isset( self::$instances[ $key ] ) ) {
 			self::$instances[ $key ] = new self( $plugin_file, $config );
 		}
-  
+
 		return self::$instances[ $key ];
 	}
 
@@ -214,7 +214,7 @@ class Config {
 		if ( false === $key ) {
 			$key = $plugin_file;
 		}
-  
+
 		unset( self::$instances[ $key ] );
 	}
 
@@ -254,14 +254,9 @@ class Config {
 		$this->plugin_url      = plugin_dir_url( $plugin_file );
 		$this->plugin_basename = plugin_basename( $plugin_file );
 
-		// Set updater manager paths (where the updater files are located)
-		// Calculate paths relative to the consuming plugin, not __FILE__ which can be cached by PHP
-		// Get the plugin's directory and build the vendor path from there
-		$plugin_dir  = dirname( (string) $plugin_file );
-		$vendor_path = $plugin_dir . '/vendor/rajandangi/wp-gh-release-updater/src/';
-
-		$this->updater_dir = trailingslashit( $vendor_path );
-		$this->updater_url = plugin_dir_url( $plugin_file ) . 'vendor/rajandangi/wp-gh-release-updater/src/';
+		// Set updater manager paths (resolved from this file's location)
+		$this->updater_dir = trailingslashit( __DIR__ );
+		$this->updater_url = $this->resolveUpdaterUrl( $plugin_file );
 
 		// Extract plugin data from file headers
 		$plugin_data          = $this->extractPluginData( $plugin_file );
@@ -797,5 +792,32 @@ class Config {
 	public function getCacheDuration(): int {
 		// Fixed 1-minute cache as per requirements
 		return 60;
+	}
+
+	/**
+	 * Resolve the updater URL from __DIR__ relative to the plugin root.
+	 *
+	 * Works regardless of whether the package lives in vendor/ or vendor_prefixed/.
+	 *
+	 * @param string $plugin_file Main plugin file path.
+	 * @return string
+	 */
+	private function resolveUpdaterUrl( string $plugin_file ): string {
+		$plugin_dir_real = realpath( dirname( (string) $plugin_file ) );
+		$plugin_dir      = wp_normalize_path( false !== $plugin_dir_real ? $plugin_dir_real : dirname( (string) $plugin_file ) );
+
+		$updater_dir_real = realpath( __DIR__ );
+		$updater_dir      = wp_normalize_path( false !== $updater_dir_real ? $updater_dir_real : __DIR__ );
+
+		$plugin_dir_prefix = trailingslashit( untrailingslashit( $plugin_dir ) );
+
+		// Get the relative path from the plugin root to this file's directory.
+		if ( str_starts_with( trailingslashit( $updater_dir ), $plugin_dir_prefix ) ) {
+			$relative = ltrim( substr( $updater_dir, strlen( untrailingslashit( $plugin_dir ) ) ), '/' );
+			return trailingslashit( plugin_dir_url( $plugin_file ) . $relative );
+		}
+
+		// Fallback: resolve from this file path directly.
+		return trailingslashit( plugin_dir_url( __FILE__ ) );
 	}
 }
