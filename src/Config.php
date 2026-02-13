@@ -123,6 +123,13 @@ class Config {
 	private $capability;
 
 	/**
+  * Base WP-CLI command path.
+  *
+  * Example: my-plugin
+  */
+ private string $cli_command;
+
+	/**
 	 * Settings page slug.
 	 *
 	 * @var string
@@ -233,6 +240,7 @@ class Config {
 	 *    Optional:
 	 *      - menu_parent: string (default: 'tools.php')
 	 *      - capability: string (default: 'manage_options')
+	 *      - cli_command: string (default: '<plugin-directory>')
 	 */
 	private function __construct( $plugin_file = null, $config = [] ) {
 		if ( ! $plugin_file || ! file_exists( $plugin_file ) ) {
@@ -295,9 +303,74 @@ class Config {
 		$this->page_title  = $config['page_title'];
 		$this->capability  = $config['capability'] ?? 'manage_options';
 
+		// WP-CLI command path
+		$default_cli_command = $this->buildDefaultCliCommand();
+		$requested_command   = $config['cli_command'] ?? $default_cli_command;
+		$this->cli_command   = $this->sanitizeCliCommandPath( (string) $requested_command );
+
+		if ( '' === $this->cli_command ) {
+			$this->cli_command = $default_cli_command;
+		}
+
 		// Generate settings page slug and group from plugin slug
 		$this->settings_page_slug = str_replace( '_', '-', $this->plugin_slug ) . '-updater-settings';
 		$this->settings_group     = $this->plugin_slug . '_updater_settings';
+	}
+
+	/**
+  * Build default WP-CLI command path.
+  *
+  * Uses plugin directory name when available to reduce conflicts between
+  * environments like "my-plugin" and "my-plugin-development".
+  */
+ private function buildDefaultCliCommand(): string {
+		$plugin_dir = dirname( $this->plugin_basename );
+
+		if ( '.' === $plugin_dir || '' === $plugin_dir ) {
+			$plugin_dir = $this->plugin_slug;
+		}
+
+		$plugin_dir = strtolower( (string) preg_replace( '/[^a-zA-Z0-9_-]+/', '-', $plugin_dir ) );
+		$plugin_dir = trim( $plugin_dir, '-_' );
+
+		if ('' === $plugin_dir) {
+      return $this->plugin_slug;
+  }
+
+		return $plugin_dir;
+	}
+
+	/**
+  * Sanitize WP-CLI command path.
+  *
+  * Allows multi-part command paths (space-separated).
+  *
+  * @param string $command WP-CLI command path.
+  */
+ private function sanitizeCliCommandPath( string $command ): string {
+		$command = strtolower( trim( $command ) );
+
+		if ( '' === $command ) {
+			return '';
+		}
+
+		$segments           = preg_split( '/\s+/', $command );
+		$sanitized_segments = [];
+
+		foreach ( $segments as $segment ) {
+			$segment = preg_replace( '/[^a-zA-Z0-9_-]+/', '-', $segment );
+			$segment = trim( (string) $segment, '-_' );
+
+			if ( '' !== $segment ) {
+				$sanitized_segments[] = $segment;
+			}
+		}
+
+		if ( $sanitized_segments === [] ) {
+			return '';
+		}
+
+		return implode( ' ', $sanitized_segments );
 	}
 
 	/**
@@ -457,6 +530,13 @@ class Config {
 	}
 
 	/**
+  * Get base WP-CLI command path.
+  */
+ public function getCliCommand(): string {
+		return $this->cli_command;
+	}
+
+	/**
 	 * Get settings page slug
 	 */
 	public function getSettingsPageSlug(): string {
@@ -546,7 +626,7 @@ class Config {
 	 * @return array Default options
 	 */
 	public function getDefaultOptions(): array {
-		return ['repository_url'   => '', 'access_token'     => '', 'last_checked'     => 0, 'latest_version'   => '', 'update_available' => false, 'last_log'         => []];
+		return ['repository_url'   => '', 'access_token'     => '', 'last_checked'     => 0, 'latest_version'   => '', 'update_available' => false];
 	}
 
 	/**
@@ -556,7 +636,7 @@ class Config {
 	 * @param mixed  $default_value Default value
 	 * @return mixed Option value
 	 */
-	public function getOption( $option_name, mixed $default_value = false ) {
+	public function getOption( string $option_name, mixed $default_value = false ) {
 		return get_option( $this->getOptionName( $option_name ), $default_value );
 	}
 
@@ -567,7 +647,7 @@ class Config {
 	 * @param mixed  $value Option value
 	 * @return bool Success status
 	 */
-	public function updateOption( $option_name, mixed $value ) {
+	public function updateOption( string $option_name, mixed $value ) {
 		return update_option( $this->getOptionName( $option_name ), $value );
 	}
 
@@ -578,7 +658,7 @@ class Config {
 	 * @param mixed  $value Option value
 	 * @return bool Success status
 	 */
-	public function addOption( $option_name, mixed $value ) {
+	public function addOption( string $option_name, mixed $value ) {
 		return add_option( $this->getOptionName( $option_name ), $value );
 	}
 
@@ -588,7 +668,7 @@ class Config {
 	 * @param string $option_name Option name without prefix
 	 * @return bool Success status
 	 */
-	public function deleteOption( $option_name ) {
+	public function deleteOption( string $option_name ) {
 		return delete_option( $this->getOptionName( $option_name ) );
 	}
 
@@ -689,7 +769,7 @@ class Config {
 	 *
 	 * @return string Decrypted access token
 	 */
-	public function getAccessToken() {
+	public function getAccessToken(): string {
 		$encrypted_token = $this->getOption( 'access_token', '' );
 
 		if ( empty( $encrypted_token ) ) {
