@@ -12,7 +12,8 @@ A lightweight Composer library that enables manual GitHub release updates for Wo
 - **One-Line Integration** - Single class instantiation with auto-detection
 - **Automatic Slug Detection** - Extracts slug from plugin filename
 - **Encrypted Token Storage** - Secure token encryption using WordPress salts (AES-256-CBC)
-- **Multi-Plugin Safe** - Complete isolation between plugins
+- **Data Isolation** - Each plugin gets its own options, AJAX actions, and asset handles
+- **Namespace Scoping Ready** - Works with [PHP-Scoper](https://github.com/humbug/php-scoper) to prevent class collisions
 - **Public & Private Repos** - Support for both repository types
 - **Manual Updates Only** - No automatic background checks
 - **Zero Dependencies** - Vanilla JavaScript, no jQuery
@@ -22,7 +23,6 @@ A lightweight Composer library that enables manual GitHub release updates for Wo
 - **WordPress** 6.0+
 - **PHP** 8.3+
 - **Composer** 2.0+
-- **ZipArchive** PHP extension
 
 ## Installation
 
@@ -96,7 +96,9 @@ This slug creates unique prefixes:
 - **Assets**: `{slug}-admin-js`, `{slug}-admin-css`
 - **Nonces**: `{slug}_nonce`
 
-Complete isolation between multiple plugins guaranteed!
+This gives each plugin its own database entries, AJAX endpoints, and script handles.
+
+> **Important:** Data isolation does not prevent PHP class collisions. If two plugins bundle this package at different versions without namespace scoping, only one version of each class will be loaded (whichever plugin loads first). See [Avoiding Class Collisions](#avoiding-class-collisions-with-php-scoper) below.
 
 ## Usage
 
@@ -127,22 +129,22 @@ Examples:
 
 ```bash
 # Uses saved repository URL and saved token from plugin settings
-wp uwu-extensions-development test-repo
+wp mu-plugin-updater test-repo
 
 # Check update status
-wp uwu-extensions-development check-updates
+wp mu-plugin-updater check-updates
 
 # Perform update when available
-wp uwu-extensions-development update
+wp mu-plugin-updater update
 
 # Dry-run update flow (no upgrader execution)
-wp uwu-extensions-development update --dry
+wp mu-plugin-updater update --dry
 
 # Override repository URL for one-off testing
-wp uwu-extensions-development test-repo --repository-url=owner/repo
+wp mu-plugin-updater test-repo --repository-url=owner/repo
 
 # Override token for one-off testing
-wp uwu-extensions-development test-repo --access-token=github_pat_xxx
+wp mu-plugin-updater test-repo --access-token=github_pat_xxx
 ```
 
 `test-repo` performs the same repository access validation as **Test Repository Access** in the updater settings page.
@@ -160,7 +162,7 @@ new GitHubUpdaterManager([
 
 ### For Developers
 
-**1. Required Plugin Headers:**
+**Required Plugin Headers:**
 
 ```php
 <?php
@@ -174,166 +176,112 @@ new GitHubUpdaterManager([
  */
 ```
 
-**2. Automate Releases with GitHub Actions:**
+The updater reads `Plugin Name` and `Version` from these headers automatically. See [Release Process](#release-process) for automating builds with GitHub Actions.
 
-Automate your release process by adding this workflow to your plugin repository:
+## Avoiding Class Collisions with PHP-Scoper
 
-**Setup:**
-1. Create `.github/workflows/release.yml` in your plugin repository
-2. Update `FILE_FOR_VERSION` to your main plugin file (e.g., `my-plugin.php`)
-3. Update `SLUG` to your plugin slug (e.g., `my-plugin`)
-4. Push to `release` branch to trigger automatic release
+### The Problem
 
-**Workflow file (`.github/workflows/release.yml`):**
+WordPress loads all active plugins into a single PHP process. If two plugins both `require` this package, PHP will only load the first version of each class it encounters (e.g., `WPGitHubReleaseUpdater\GitHubUpdaterManager`). The second plugin silently gets the wrong version.
 
-```yaml
-name: Build and Release Plugin
+This causes real issues:
 
-on:
-    push:
-        branches:
-            - release # Trigger on push to release branch
+- **Plugin A** bundles updater **v1.4** (has `CLI.php`, `Logger.php`)
+- **Plugin B** bundles updater **v1.2** (missing those files)
+- If Plugin B loads first, Plugin A's WP-CLI commands and logging silently break
+- No error is thrown — PHP simply uses the already-loaded class
 
-permissions:
-    contents: write
+This is a fundamental WordPress limitation affecting **every** Composer package shared across plugins (not just this one). The built-in data isolation (unique option names, AJAX actions, etc.) does **not** solve this — the PHP classes themselves still collide.
 
-jobs:
-    build-release:
-        name: Build and Create Release
-        runs-on: ubuntu-latest
+### The Solution: PHP-Scoper
 
-        steps:
-            - name: Checkout repository
-              uses: actions/checkout@v4
+[PHP-Scoper](https://github.com/humbug/php-scoper) rewrites the package's namespace at build time so each plugin gets its own copy of the classes. Plugin A uses `PluginAVendor\WPGitHubReleaseUpdater\*` and Plugin B uses `PluginBVendor\WPGitHubReleaseUpdater\*` — no collision possible.
 
-            - name: Set up PHP
-              uses: shivammathur/setup-php@v2
-              with:
-                  php-version: "8.3"
-                  tools: composer:v2
-
-            - name: Install production dependencies
-              run: composer install --no-dev --prefer-dist --optimize-autoloader
-
-            - name: Check for npm project
-              id: check_npm
-              run: |
-                  if [ -f "package.json" ] && ([ -f "package-lock.json" ]); then
-                    echo "has_npm=true" >> "$GITHUB_OUTPUT"
-                  else
-                    echo "has_npm=false" >> "$GITHUB_OUTPUT"
-                  fi
-
-            - name: Setup Node.js
-              if: steps.check_npm.outputs.has_npm == 'true'
-              uses: actions/setup-node@v4
-              with:
-                  node-version: "lts/*"
-                  cache: "npm"
-
-            - name: Install npm dependencies
-              if: steps.check_npm.outputs.has_npm == 'true'
-              run: npm install
-
-            - name: Build assets
-              if: steps.check_npm.outputs.has_npm == 'true'
-              run: npm run build
-
-            - name: Determine version and plugin slug
-              id: vars
-              run: |
-                  # Update these variables for your plugin
-                  FILE_FOR_VERSION="my-plugin.php"  # Your main plugin file
-                  SLUG="my-plugin"                  # Your plugin slug
-
-                  # Extract version from plugin header
-                  VERSION=$(grep -iE '^\s*\*?\s*Version:' "$FILE_FOR_VERSION" | head -n1 | sed -E 's/^.*Version:\s*//I' | tr -d '\r' | sed 's/\s*$//')
-
-                  if [[ -z "$VERSION" ]]; then
-                    echo "Error: Could not determine plugin version"
-                    exit 1
-                  fi
-
-                  echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-                  echo "slug=${SLUG}" >> "$GITHUB_OUTPUT"
-                  echo "zip=${SLUG}.zip" >> "$GITHUB_OUTPUT"
-
-            - name: Create plugin package
-              run: |
-                  mkdir -p "release-package/${{ steps.vars.outputs.slug }}"
-
-                  # Copy files, excluding dev dependencies
-                  rsync -a --delete \
-                    --exclude '.git' \
-                    --exclude '.github' \
-                    --exclude 'node_modules' \
-                    --exclude 'tests' \
-                    --exclude '.gitignore' \
-                    --exclude 'composer.json' \
-                    --exclude 'composer.lock' \
-                    --exclude 'phpcs.xml' \
-                    --exclude 'phpstan.neon' \
-                    --exclude 'rector.php' \
-                    --exclude 'biome.json' \
-                    --exclude 'package.json' \
-                    --exclude 'package-lock.json' \
-                    --exclude 'webpack.config.js' \
-                    --exclude 'release-package' \
-                    ./ "release-package/${{ steps.vars.outputs.slug }}/"
-
-            - name: Create ZIP file
-              working-directory: release-package/${{ steps.vars.outputs.slug }}
-              run: zip -r "../${{ steps.vars.outputs.zip }}" .
-
-            - name: Create and push tag
-              run: |
-                  git config user.name "github-actions[bot]"
-                  git config user.email "github-actions[bot]@users.noreply.github.com"
-                  git tag -a "v${{ steps.vars.outputs.version }}" -m "Release v${{ steps.vars.outputs.version }}"
-                  git push origin "v${{ steps.vars.outputs.version }}"
-
-            - name: Create GitHub Release
-              uses: softprops/action-gh-release@v2
-              with:
-                  tag_name: v${{ steps.vars.outputs.version }}
-                  name: v${{ steps.vars.outputs.version }}
-                  body: "Release version ${{ steps.vars.outputs.version }}"
-                  files: release-package/${{ steps.vars.outputs.zip }}
-                  generate_release_notes: true
-                  draft: false
-                  prerelease: false
-              env:
-                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-```
-
-**Usage:**
+#### Step 1: Install PHP-Scoper
 
 ```bash
-# 1. Update version in your plugin header
-# Plugin Name: My Plugin
-# Version: 1.2.3  ← Update this
-
-# 2. Commit changes
-git add my-plugin.php
-git commit -m "Bump version to 1.2.3"
-
-# 3. Push to release branch (triggers automatic build)
-git push origin main:release
+composer require --dev humbug/php-scoper
 ```
 
-**What the workflow does:**
-- ✅ Extracts version from plugin header automatically
-- ✅ Installs production Composer dependencies
-- ✅ Creates clean ZIP package (excludes dev files)
-- ✅ Creates git tag with version number
-- ✅ Creates GitHub release with auto-generated notes
-- ✅ Uploads plugin ZIP as release asset
+#### Step 2: Create `scoper.inc.php`
 
-**Benefits:**
-- No manual ZIP building
-- Consistent release packages
-- Automated version tagging
-- One-step release process
+```php
+<?php
+
+declare(strict_types=1);
+
+$finder = 'Isolated\\Symfony\\Component\\Finder\\Finder';
+
+return [
+    'prefix' => 'MyPluginVendor', // Choose a unique prefix for your plugin
+
+    'finders' => [
+        $finder::create()
+            ->files()
+            ->ignoreVCS(true)
+            ->in(__DIR__ . '/vendor/rajandangi/wp-gh-release-updater/src'),
+    ],
+
+    // Don't prefix WordPress global functions, classes, and constants
+    'expose-global-constants' => true,
+    'expose-global-classes'   => true,
+    'expose-global-functions' => true,
+
+    // Don't prefix WordPress-bundled namespaces
+    'exclude-namespaces' => [
+        'WP_CLI',
+        'WpOrg',
+        'PHPMailer',
+        'Automattic',
+    ],
+];
+```
+
+#### Step 3: Add Composer scripts
+
+```json
+{
+    "autoload": {
+        "psr-4": {
+            "MyPluginVendor\\WPGitHubReleaseUpdater\\": "vendor_prefixed/rajandangi/wp-gh-release-updater/"
+        }
+    },
+    "scripts": {
+        "scope-updater": "php -d memory_limit=512M ./vendor/bin/php-scoper add-prefix --config=scoper.inc.php --output-dir=vendor_prefixed/rajandangi/wp-gh-release-updater --force",
+        "post-install-cmd": "@scope-updater",
+        "post-update-cmd": "@scope-updater"
+    }
+}
+```
+
+#### Step 4: Update your import
+
+```php
+// Before (unscoped — vulnerable to collisions)
+use WPGitHubReleaseUpdater\GitHubUpdaterManager;
+
+// After (scoped — fully isolated)
+use MyPluginVendor\WPGitHubReleaseUpdater\GitHubUpdaterManager;
+```
+
+#### Step 5: Run the scoper
+
+```bash
+composer run scope-updater
+```
+
+This generates `vendor_prefixed/` with all classes rewritten under your prefix. Commit this directory to your repository so it's available in production without requiring PHP-Scoper at runtime.
+
+### Key Points
+
+- The `expose-global-*` flags prevent PHP-Scoper from prefixing WordPress core symbols (`WP_Error`, `add_action`, `ABSPATH`, etc.)
+- The `exclude-namespaces` list keeps WP-CLI and other WordPress-bundled namespaces intact
+- Run `composer install --no-dev --no-scripts` in CI/CD to skip scoping (since `vendor_prefixed/` is already committed)
+- Each plugin should use a **different prefix** (e.g., `AcmeVendor`, `MyPluginVendor`)
+
+### Without PHP-Scoper
+
+If you are certain no other active plugin on your site uses this package, you can skip scoping and use the classes directly. The data isolation (unique option names, AJAX actions, nonces) still works. Just be aware that adding another plugin with this package later will cause silent class collisions.
 
 ## Security
 
@@ -388,27 +336,165 @@ npm run biome:fix  # Fix JS/CSS issues
 
 ## Release Process
 
-This package uses automated releases from the `release` branch:
+Automate your plugin's release with GitHub Actions. Push to the `release` branch and the workflow handles everything — version extraction, packaging, tagging, and publishing.
 
-1. **Update Version**: Edit the `VERSION` file with the new version number (e.g., `1.2.3`)
-2. **Merge to Release Branch**: Merge or push your changes to the `release` branch
-3. **Automatic Process**:
-   - GitHub Actions will automatically:
-     - Create a git tag
-     - Install production dependencies (with `vendor/`)
-     - Create a production-ready ZIP file
-     - Create a GitHub release with the ZIP attached
-     - Update Packagist
+### Setup
+
+1. Create `.github/workflows/release.yml` in your plugin repository
+2. Update `FILE_FOR_VERSION` to your main plugin file (e.g., `my-plugin.php`)
+3. Update `SLUG` to your plugin slug (e.g., `my-plugin`)
+4. Push to `release` branch to trigger
+
+### Workflow File
+
+`.github/workflows/release.yml`:
+
+```yaml
+name: Build and Release Plugin
+
+on:
+    push:
+        branches:
+            - release
+
+permissions:
+    contents: write
+
+jobs:
+    build-release:
+        name: Build and Create Release
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+
+            - name: Set up PHP
+              uses: shivammathur/setup-php@v2
+              with:
+                  php-version: "8.3"
+                  tools: composer:v2
+
+            - name: Install production dependencies
+              run: composer install --no-dev --prefer-dist --optimize-autoloader
+
+            - name: Check for npm project
+              id: check_npm
+              run: |
+                  if [ -f "package.json" ] && ([ -f "package-lock.json" ]); then
+                    echo "has_npm=true" >> "$GITHUB_OUTPUT"
+                  else
+                    echo "has_npm=false" >> "$GITHUB_OUTPUT"
+                  fi
+
+            - name: Setup Node.js
+              if: steps.check_npm.outputs.has_npm == 'true'
+              uses: actions/setup-node@v4
+              with:
+                  node-version: "lts/*"
+                  cache: "npm"
+
+            - name: Install npm dependencies
+              if: steps.check_npm.outputs.has_npm == 'true'
+              run: npm ci
+
+            - name: Build assets
+              if: steps.check_npm.outputs.has_npm == 'true'
+              run: npm run build
+
+            - name: Determine version and plugin slug
+              id: vars
+              run: |
+                  # Update these variables for your plugin
+                  FILE_FOR_VERSION="my-plugin.php"  # Your main plugin file
+                  SLUG="my-plugin"                  # Your plugin slug
+
+                  VERSION=$(grep -iE '^\s*\*?\s*Version:' "$FILE_FOR_VERSION" | head -n1 | sed -E 's/^.*Version:\s*//I' | tr -d '\r' | sed 's/\s*$//')
+
+                  if [[ -z "$VERSION" ]]; then
+                    echo "Error: Could not determine plugin version"
+                    exit 1
+                  fi
+
+                  echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+                  echo "slug=${SLUG}" >> "$GITHUB_OUTPUT"
+                  echo "zip=${SLUG}.zip" >> "$GITHUB_OUTPUT"
+
+            - name: Create plugin package
+              run: |
+                  mkdir -p "release-package/${{ steps.vars.outputs.slug }}"
+
+                  rsync -a --delete \
+                    --exclude '.git' \
+                    --exclude '.github' \
+                    --exclude 'node_modules' \
+                    --exclude 'tests' \
+                    --exclude '.gitignore' \
+                    --exclude 'composer.json' \
+                    --exclude 'composer.lock' \
+                    --exclude 'phpcs.xml' \
+                    --exclude 'phpstan.neon' \
+                    --exclude 'rector.php' \
+                    --exclude 'biome.json' \
+                    --exclude 'package.json' \
+                    --exclude 'package-lock.json' \
+                    --exclude 'webpack.config.js' \
+                    --exclude 'release-package' \
+                    ./ "release-package/${{ steps.vars.outputs.slug }}/"
+
+            - name: Create ZIP file
+              working-directory: release-package/${{ steps.vars.outputs.slug }}
+              run: zip -r "../${{ steps.vars.outputs.zip }}" .
+
+            - name: Create and push tag
+              run: |
+                  git config user.name "github-actions[bot]"
+                  git config user.email "github-actions[bot]@users.noreply.github.com"
+                  git tag -a "v${{ steps.vars.outputs.version }}" -m "Release v${{ steps.vars.outputs.version }}"
+                  git push origin "v${{ steps.vars.outputs.version }}"
+
+            - name: Create GitHub Release
+              uses: softprops/action-gh-release@v2
+              with:
+                  tag_name: v${{ steps.vars.outputs.version }}
+                  name: v${{ steps.vars.outputs.version }}
+                  body: "Release version ${{ steps.vars.outputs.version }}"
+                  files: release-package/${{ steps.vars.outputs.zip }}
+                  generate_release_notes: true
+                  draft: false
+                  prerelease: false
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+### How to Release
+
+```bash
+# 1. Update version in your plugin header
+# Version: 1.2.3  ← Update this
+
+# 2. Commit and push to release branch
+git add my-plugin.php
+git commit -m "Bump version to 1.2.3"
+git push origin main:release
+```
+
+The workflow will automatically:
+- Extract the version from your plugin header
+- Install production Composer dependencies
+- Build frontend assets (if `package.json` exists)
+- Create a clean ZIP package (excludes dev files)
+- Tag the release and publish it on GitHub
 
 ### Download Options
 
-**For Composer Users:**
+**Via Composer:**
 ```bash
 composer require rajandangi/wp-gh-release-updater
 ```
 
-**For Direct Download:**
-Download the production-ready ZIP file from the [Releases page](https://github.com/rajandangi/wp-gh-release-updater/releases). The ZIP includes all dependencies in the `vendor/` folder, ready to use.
+**Direct Download:**
+Grab the production-ready ZIP from the [Releases page](https://github.com/rajandangi/wp-gh-release-updater/releases). It includes `vendor/` — ready to use.
 
 ## Contributing
 
