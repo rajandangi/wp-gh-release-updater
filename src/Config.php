@@ -333,9 +333,9 @@ class Config {
 		$plugin_dir = strtolower( (string) preg_replace( '/[^a-zA-Z0-9_-]+/', '-', $plugin_dir ) );
 		$plugin_dir = trim( $plugin_dir, '-_' );
 
-		if ('' === $plugin_dir) {
-      return $this->plugin_slug;
-  }
+		if ( '' === $plugin_dir ) {
+			return $this->plugin_slug;
+		}
 
 		return $plugin_dir;
 	}
