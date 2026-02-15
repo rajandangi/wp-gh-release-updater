@@ -807,16 +807,15 @@ class Config {
 	}
 
 	/**
-	 * Resolve the updater URL from __DIR__ relative to the plugin root.
-	 *
-	 * Works regardless of whether the package lives in vendor/ or vendor_prefixed/.
-	 *
-	 * @param string $plugin_file Main plugin file path.
-	 * @return string
-	 */
-	private function resolveUpdaterUrl( string $plugin_file ): string {
-		$plugin_dir_real = realpath( dirname( (string) $plugin_file ) );
-		$plugin_dir      = wp_normalize_path( false !== $plugin_dir_real ? $plugin_dir_real : dirname( (string) $plugin_file ) );
+  * Resolve the updater URL from __DIR__ relative to the plugin root.
+  *
+  * Works regardless of whether the package lives in vendor/ or vendor_prefixed/.
+  *
+  * @param string $plugin_file Main plugin file path.
+  */
+ private function resolveUpdaterUrl( string $plugin_file ): string {
+		$plugin_dir_real = realpath( dirname( $plugin_file ) );
+		$plugin_dir      = wp_normalize_path( false !== $plugin_dir_real ? $plugin_dir_real : dirname( $plugin_file ) );
 
 		$updater_dir_real = realpath( __DIR__ );
 		$updater_dir      = wp_normalize_path( false !== $updater_dir_real ? $updater_dir_real : __DIR__ );
