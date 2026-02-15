@@ -452,8 +452,8 @@ jobs:
                     ./ "release-package/${{ steps.vars.outputs.slug }}/"
 
             - name: Create ZIP file
-              working-directory: release-package/${{ steps.vars.outputs.slug }}
-              run: zip -r "../${{ steps.vars.outputs.zip }}" .
+              working-directory: release-package
+              run: zip -r "${{ steps.vars.outputs.zip }}" "${{ steps.vars.outputs.slug }}"
 
             - name: Create and push tag
               run: |

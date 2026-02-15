@@ -55,6 +55,9 @@ class Updater {
 		// Resolve authenticated download URL just-in-time before WordPress downloads the package.
 		add_filter( 'upgrader_pre_download', array( $this, 'handlePreDownload' ), 10, 3 );
 
+		// Fix extracted directory name when ZIP internal folder doesn't match the plugin directory.
+		add_filter( 'upgrader_source_selection', array( $this, 'fixSourceDirectory' ), 10, 4 );
+
 		// Clear update cache after successful plugin upgrade (priority 5 for better compatibility)
 		add_action( 'upgrader_process_complete', array( $this, 'clearCacheAfterUpdate' ), 5, 2 );
 	}
@@ -145,8 +148,7 @@ class Updater {
 				);
 				$this->config->updateOption( 'release_snapshot', $release_snapshot );
 			}
-
-		} catch ( \Exception $e ) {
+} catch ( \Exception $e ) {
 			$result['message'] = 'Error checking for updates: ' . $e->getMessage();
 			Logger::log( $this->config, 'ERROR', 'Updater', $result['message'], array( 'action' => 'Check' ) );
 		}
@@ -178,6 +180,9 @@ class Updater {
 	 * structured result.  Use this from CLI commands (`test-repo`,
 	 * `update --dry`) to surface problems before an actual upgrade.
 	 *
+	 * @param string|null $repository_url Optional repository URL override.
+	 * @param string|null $access_token   Optional access token override.
+	 * @param bool        $persist_options Whether to persist overrides to options.
 	 * @return array{
 	 *     success: bool,
 	 *     current_version: string,
@@ -394,7 +399,8 @@ class Updater {
 	 * This makes an HTTP call for private repos — do NOT use in filters
 	 * that run on every page load.
 	 *
-	 * @param array $release_data GitHub release data.
+	 * @param array  $release_data GitHub release data.
+	 * @param string $token        Access token for private repos.
 	 * @return string Resolved download URL or empty string.
 	 */
 	private function findDownloadAsset( $release_data, string $token = '' ) {
@@ -488,7 +494,8 @@ class Updater {
 	 *
 	 * For public repositories we use browser_download_url directly.
 	 *
-	 * @param array $asset Single asset entry from the GitHub release payload.
+	 * @param array  $asset Single asset entry from the GitHub release payload.
+	 * @param string $token Access token for authenticated requests.
 	 * @return string Direct download URL, or empty string on failure.
 	 */
 	private function resolveAssetDownloadUrl( array $asset, string $token = '' ): string {
@@ -500,7 +507,7 @@ class Updater {
 		}
 
 		// Private (or authenticated) repo — resolve the API redirect.
-		$api_url  = $asset['url'] ?? '';
+		$api_url = $asset['url'] ?? '';
 		if ( '' === $api_url ) {
 			return $asset['browser_download_url'] ?? '';
 		}
@@ -511,7 +518,7 @@ class Updater {
 				'timeout'     => 30,
 				'redirection' => 0, // Do NOT follow redirects — we want the Location header.
 				'headers'     => array(
-					'Authorization' => 'Bearer ' . $token,
+					'Authorization' => 'token ' . $token,
 					'Accept'        => 'application/octet-stream',
 				),
 			)
@@ -524,7 +531,6 @@ class Updater {
 
 		$status   = wp_remote_retrieve_response_code( $response );
 		$location = wp_remote_retrieve_header( $response, 'location' );
-
 
 		// 302/301 → the Location header contains the pre-signed URL.
 		if ( in_array( $status, array( 301, 302 ), true ) && '' !== $location ) {
@@ -548,13 +554,19 @@ class Updater {
 	 * This filter fires in WP_Upgrader::download_package() BEFORE
 	 * WordPress attempts to download the file.  For private repos the
 	 * package URL in the transient is a GitHub API asset URL that
-	 * requires authentication.  We download the file here with proper
-	 * auth headers and return the local temp file path so WordPress
-	 * never has to deal with Authorization headers itself.
+	 * requires authentication.
 	 *
-	 * Uses the same asset matching logic as validateUpdateReadiness(),
-	 * guaranteeing consistency between test-repo / update --dry and
-	 * the actual update.
+	 * Uses a two-phase approach to avoid leaking the Authorization
+	 * header to the CDN (which causes 401 on servers with older cURL
+	 * that forwards auth headers on cross-domain redirects):
+	 *
+	 *   Phase 1: Send an authenticated request with redirection=0 to
+	 *            capture the 302 Location header (pre-signed URL).
+	 *   Phase 2: Download from the pre-signed URL using download_url()
+	 *            with NO auth headers — the token is baked into the URL.
+	 *
+	 * This is the same resolve logic used by validateUpdateReadiness()
+	 * (test-repo / update --dry), guaranteeing consistency.
 	 *
 	 * @param bool|\WP_Error $reply   Whether to bail without returning the package (default false).
 	 * @param string         $package The package file name or URL.
@@ -592,64 +604,188 @@ class Updater {
 			return $reply;
 		}
 
+		// ── Phase 1: Resolve the pre-signed download URL ──────────────
+		// Send an authenticated request with redirection=0 so cURL does
+		// NOT follow the redirect — this prevents the Authorization
+		// header from being forwarded to objects.githubusercontent.com
+		// (which causes 401 on servers with older cURL < 7.58).
+		$auth_header = 'token ' . $token;
 
-		// Stream the file directly from the GitHub API asset URL with
-		// proper auth headers. cURL will follow the 302 redirect to the
-		// pre-signed objects.githubusercontent.com URL automatically,
-		// dropping the Authorization header on the cross-domain redirect
-		// (which is fine — the pre-signed URL has auth baked in).
-		// This single-request approach avoids the race condition where a
-		// separate resolve step gets a different HTTP status (200 vs 302)
-		// depending on caching / transport behavior.
-		$tmpfilename = wp_tempnam( $package );
+		// Guard: Other plugins (e.g. PUC in admin-menu-editor-pro) hook
+		// into http_request_args and override the Authorization header for
+		// all api.github.com requests with their own token.  We register
+		// a late-priority filter that forcibly restores our header.
+		$guard_cb = function ( $parsed_args, $url ) use ( $package, $auth_header ) {
+			if ( $url === $package ) {
+				$parsed_args['headers']['Authorization'] = $auth_header;
+				$parsed_args['headers']['Accept']        = 'application/octet-stream';
+			}
+			return $parsed_args;
+		};
+		add_filter( 'http_request_args', $guard_cb, PHP_INT_MAX, 2 );
 
-		$response = wp_safe_remote_get(
+		$resolve_response = wp_remote_get(
 			$package,
 			array(
-				'timeout'  => 300,
-				'stream'   => true,
-				'filename' => $tmpfilename,
-				'headers'  => array(
-					'Authorization' => 'Bearer ' . $token,
+				'timeout'     => 30,
+				'redirection' => 0,
+				'headers'     => array(
+					'Authorization' => $auth_header,
 					'Accept'        => 'application/octet-stream',
 				),
 			)
 		);
 
-		if ( is_wp_error( $response ) ) {
-			// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Best-effort cleanup of the temp file.
-			@unlink( $tmpfilename );
-			Logger::log( $this->config, 'ERROR', 'Updater', 'handlePreDownload: Streaming download failed.', array( 'action' => 'Download', 'error' => $response->get_error_message() ) );
-			return $response;
+		remove_filter( 'http_request_args', $guard_cb, PHP_INT_MAX );
+
+		if ( is_wp_error( $resolve_response ) ) {
+			Logger::log( $this->config, 'ERROR', 'Updater', 'handlePreDownload: Failed to resolve asset redirect.', array( 'action' => 'Download', 'error' => $resolve_response->get_error_message() ) );
+			return $resolve_response;
 		}
 
-		$status = wp_remote_retrieve_response_code( $response );
+		$status   = wp_remote_retrieve_response_code( $resolve_response );
+		$location = wp_remote_retrieve_header( $resolve_response, 'location' );
 
-		if ( 200 !== $status ) {
-			// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Best-effort cleanup of the temp file.
-			@unlink( $tmpfilename );
-			$body = wp_remote_retrieve_body( $response );
-			Logger::log( $this->config, 'ERROR', 'Updater', sprintf( 'handlePreDownload: GitHub returned HTTP %d.', $status ), array( 'action' => 'Download' ) );
+		// 302/301 → Location header contains the pre-signed URL.
+		if ( in_array( $status, array( 301, 302 ), true ) && '' !== $location ) {
+			// ── Phase 2: Download from the pre-signed URL ───────────
+			// No auth headers needed — the token is embedded in the URL.
+			$tmpfile = download_url( $location, 300 );
+
+			if ( is_wp_error( $tmpfile ) ) {
+				Logger::log( $this->config, 'ERROR', 'Updater', 'handlePreDownload: Download from pre-signed URL failed.', array( 'action' => 'Download', 'error' => $tmpfile->get_error_message() ) );
+				return $tmpfile;
+			}
+			return $tmpfile;
+		}
+
+		// 200 → GitHub returned the file body directly (rare, but possible
+		// with some transport configurations). Save it to a temp file.
+		if ( 200 === $status ) {
+			$body = wp_remote_retrieve_body( $resolve_response );
+
+			if ( '' === $body ) {
+				Logger::log( $this->config, 'ERROR', 'Updater', 'handlePreDownload: GitHub returned 200 but empty body.', array( 'action' => 'Download' ) );
+				return new \WP_Error(
+					'github_download_empty',
+					'GitHub returned 200 but the response body is empty.'
+				);
+			}
+
+			$tmpfilename = wp_tempnam( 'github_asset_' );
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
+			file_put_contents( $tmpfilename, $body );
+
+			return $tmpfilename;
+		}
+
+		// Any other status — error out.
+		Logger::log( $this->config, 'ERROR', 'Updater', sprintf( 'handlePreDownload: GitHub returned HTTP %d.', $status ), array( 'action' => 'Download' ) );
+		return new \WP_Error(
+			'github_download_failed',
+			sprintf( 'GitHub asset download failed with HTTP %d.', $status )
+		);
+	}
+
+	/**
+	 * Fix the extracted directory name after a plugin update.
+	 *
+	 * GitHub release ZIPs often contain a directory name that doesn't
+	 * match the installed plugin directory (e.g. "my-plugin-development"
+	 * or "my-plugin-1.2.3" instead of "my-plugin"). WordPress uses the
+	 * ZIP's internal directory name as the destination, which creates a
+	 * duplicate plugin directory and breaks the installation.
+	 *
+	 * This filter renames the extracted directory to match the expected
+	 * plugin directory name derived from plugin_basename().
+	 *
+	 * @param string       $source        Path to the extracted source directory.
+	 * @param string       $remote_source Path to the remote source (parent temp dir).
+	 * @param \WP_Upgrader $upgrader      WP_Upgrader instance.
+	 * @param array        $hook_extra    Extra arguments passed to hooked filters.
+	 * @return string|\WP_Error Corrected source path, or WP_Error on failure.
+	 */
+	public function fixSourceDirectory( $source, $remote_source, $upgrader, $hook_extra ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed
+		// Only act on plugin updates for OUR plugin.
+		if ( ! isset( $hook_extra['plugin'] ) || $hook_extra['plugin'] !== $this->config->getPluginBasename() ) {
+			return $source;
+		}
+
+		// Expected directory name: e.g. "my-plugin" from "my-plugin/my-plugin.php".
+		$expected_dir = dirname( $this->config->getPluginBasename() );
+
+		// If plugin_basename has no directory part (single-file plugin), skip.
+		if ( '.' === $expected_dir || '' === $expected_dir ) {
+			return $source;
+		}
+
+		$source_dir = basename( untrailingslashit( $source ) );
+
+		// Already matches — nothing to do.
+		if ( $source_dir === $expected_dir ) {
+			return $source;
+		}
+
+		// Determine the correct parent for the rename.
+		//
+		// Case 1 — ZIP contains a top-level folder (e.g. "my-plugin-1.2.3/"):
+		// $source       = /tmp/upgrade/<working_dir>/my-plugin-1.2.3/
+		// $remote_source = /tmp/upgrade/<working_dir>
+		// → rename inside the working directory (sibling rename).
+		//
+		// Case 2 — ZIP has NO top-level folder (flat archive):
+		// $source       = /tmp/upgrade/<working_dir>/   (same as remote_source)
+		// $remote_source = /tmp/upgrade/<working_dir>
+		// → rename the working directory itself; the corrected path must
+		// be placed alongside it, NOT inside it.
+		$source_normalized = untrailingslashit( $source );
+		$remote_normalized = untrailingslashit( $remote_source );
+
+		if ( $source_normalized === $remote_normalized ) {
+			// Flat ZIP: place corrected directory next to the working dir.
+			$parent = dirname( $remote_normalized );
+		} else {
+			// ZIP with top-level folder: rename inside the working dir.
+			$parent = $remote_normalized;
+		}
+
+		$corrected_source = trailingslashit( $parent ) . $expected_dir . '/';
+
+		// If the corrected directory already exists (from a previous
+		// interrupted attempt), remove it first to allow the rename.
+		if ( is_dir( untrailingslashit( $corrected_source ) ) ) {
+			global $wp_filesystem;
+			if ( ! $wp_filesystem ) {
+				require_once ABSPATH . 'wp-admin/includes/file.php';
+				\WP_Filesystem();
+			}
+			if ( $wp_filesystem ) {
+				$wp_filesystem->delete( $corrected_source, true );
+			}
+		}
+
+		// Use PHP's rename() directly — $wp_filesystem->move() can fail
+		// silently on some hosting configurations.
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.rename_rename, WordPress.PHP.NoSilencedErrors.Discouraged
+		if ( ! @rename( $source_normalized, untrailingslashit( $corrected_source ) ) ) {
+			Logger::log(
+				$this->config,
+				'ERROR',
+				'Updater',
+				sprintf( 'fixSourceDirectory: Failed to rename "%s" to "%s".', $source_dir, $expected_dir ),
+				array( 'action' => 'Update' )
+			);
 			return new \WP_Error(
-				'github_download_failed',
-				sprintf( 'GitHub asset download failed with HTTP %d.', $status )
+				'rename_failed',
+				sprintf(
+					'Could not rename the update directory from "%s" to "%s".',
+					$source_dir,
+					$expected_dir
+				)
 			);
 		}
 
-		// Verify the downloaded file is not empty.
-		$filesize = filesize( $tmpfilename );
-
-		if ( 0 === $filesize || false === $filesize ) {
-			// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- Best-effort cleanup of the temp file.
-			@unlink( $tmpfilename );
-			Logger::log( $this->config, 'ERROR', 'Updater', 'handlePreDownload: Downloaded file is empty.', array( 'action' => 'Download' ) );
-			return new \WP_Error(
-				'github_download_empty',
-				'Downloaded update package is empty.'
-			);
-		}
-
-		return $tmpfilename;
+		return $corrected_source;
 	}
 
 	/**
