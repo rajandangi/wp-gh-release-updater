@@ -85,14 +85,19 @@ class CLITest extends TestCase {
 	/**
 	 * Build a CLI instance with a mocked Updater.
 	 *
-	 * @param array|null $check_result Return value for checkForUpdatesFresh().
-	 *                                 Null uses a real Updater.
+	 * @param array|null $readiness_result Return value for validateUpdateReadiness().
+	 * @param array|null $check_updates_result Return value for checkForUpdatesFresh().
 	 * @return CLI
 	 */
-	private function makeCli( ?array $check_result = null ): CLI {
-		if ( null !== $check_result ) {
+	private function makeCli( ?array $readiness_result = null, ?array $check_updates_result = null ): CLI {
+		if ( null !== $readiness_result || null !== $check_updates_result ) {
 			$updater = $this->createMock( Updater::class );
-			$updater->method( 'checkForUpdatesFresh' )->willReturn( $check_result );
+			if ( null !== $readiness_result ) {
+				$updater->method( 'validateUpdateReadiness' )->willReturn( $readiness_result );
+			}
+			if ( null !== $check_updates_result ) {
+				$updater->method( 'checkForUpdatesFresh' )->willReturn( $check_updates_result );
+			}
 		} else {
 			$github_api = new GitHubAPI( $this->config );
 			$updater    = new Updater( $this->config, $github_api );
@@ -158,19 +163,37 @@ class CLITest extends TestCase {
 	}
 
 	/**
-	 * test-repo succeeds when GitHub API returns a valid response.
+	 * test-repo succeeds when GitHub API returns a valid response
+	 * and pipeline validation passes.
 	 */
 	public function test_test_repo_succeeds_with_valid_repository(): void {
 		$GLOBALS['wp_gh_updater_test_http_response'] = $this->httpResponse(
 			[ 'id' => 123, 'full_name' => 'owner/repo' ]
 		);
 
-		$cli = $this->makeCli();
+		$readiness = [
+			'success'          => true,
+			'current_version'  => '2.0.0',
+			'latest_version'   => '3.0.0',
+			'update_available' => true,
+			'download_url'     => 'https://objects.githubusercontent.com/package.zip?token=abc',
+			'message'          => 'Update available: 2.0.0 → 3.0.0. Download URL resolved successfully.',
+		];
+
+		$cli = $this->makeCli( $readiness );
 		$cli->test_repo( [], [ 'repository-url' => 'owner/repo' ] );
 
 		$successes = $this->capturedMessages( 'success' );
 		$this->assertNotEmpty( $successes );
 		$this->assertStringContainsString( 'Repository access successful', $successes[0] );
+
+		$logs = $this->capturedMessages( 'log' );
+		$this->assertNotEmpty( $logs );
+		// Pipeline validation outputs version and download URL info.
+		$this->assertTrue(
+			in_array( true, array_map( static fn( $m ) => str_contains( $m, 'Download URL' ), $logs ), true ),
+			'Expected pipeline validation to output Download URL.'
+		);
 	}
 
 	/**
@@ -204,7 +227,22 @@ class CLITest extends TestCase {
 			];
 		};
 
-		$cli = $this->makeCli();
+		$readiness = [
+			'success'          => true,
+			'current_version'  => '2.0.0',
+			'latest_version'   => '2.0.0',
+			'update_available' => false,
+			'download_url'     => '',
+			'message'          => 'No update available. You have the latest version installed.',
+		];
+
+		$updater = $this->createMock( Updater::class );
+		$updater
+			->expects( $this->once() )
+			->method( 'validateUpdateReadiness' )
+			->with( 'override/repo', '', false )
+			->willReturn( $readiness );
+		$cli = new CLI( $this->config, $updater );
 		$cli->test_repo( [], [ 'repository-url' => 'override/repo' ] );
 
 		$this->assertStringContainsString( '/repos/override/repo', $requested_url );
@@ -232,7 +270,22 @@ class CLITest extends TestCase {
 			];
 		};
 
-		$cli = $this->makeCli();
+		$readiness = [
+			'success'          => true,
+			'current_version'  => '2.0.0',
+			'latest_version'   => '2.0.0',
+			'update_available' => false,
+			'download_url'     => '',
+			'message'          => 'No update available. You have the latest version installed.',
+		];
+
+		$updater = $this->createMock( Updater::class );
+		$updater
+			->expects( $this->once() )
+			->method( 'validateUpdateReadiness' )
+			->with( 'owner/repo', 'ghp_override_token', false )
+			->willReturn( $readiness );
+		$cli = new CLI( $this->config, $updater );
 		$cli->test_repo( [], [ 'repository-url' => 'owner/repo', 'access-token' => 'ghp_override_token' ] );
 
 		// Verify the override token was sent in the Authorization header.
@@ -263,18 +316,113 @@ class CLITest extends TestCase {
 		$this->assertNotEmpty( $errors );
 	}
 
+	// ── test-repo pipeline validation ───────────────────────────────
+
+	/**
+	 * test-repo reports pipeline failure when validateUpdateReadiness fails.
+	 */
+	public function test_test_repo_pipeline_reports_failure(): void {
+		$GLOBALS['wp_gh_updater_test_http_response'] = $this->httpResponse(
+			[ 'id' => 123, 'full_name' => 'owner/repo' ]
+		);
+
+		$readiness = [
+			'success'          => false,
+			'current_version'  => '2.0.0',
+			'latest_version'   => '',
+			'update_available' => false,
+			'download_url'     => '',
+			'message'          => 'GitHub API rate limit exceeded.',
+		];
+
+		$cli = $this->makeCli( $readiness );
+
+		try {
+			$cli->test_repo( [], [ 'repository-url' => 'owner/repo' ] );
+			$this->fail( 'Expected WPCLITestException to be thrown.' );
+		} catch ( \WPCLITestException $exception ) {
+			$this->assertStringContainsString( 'rate limit', strtolower( $exception->getMessage() ) );
+		}
+
+		// Repo access succeeded, but pipeline failed.
+		$successes = $this->capturedMessages( 'success' );
+		$this->assertNotEmpty( $successes );
+		$this->assertStringContainsString( 'Repository access successful', $successes[0] );
+	}
+
+	/**
+	 * test-repo reports no update available through pipeline validation.
+	 */
+	public function test_test_repo_pipeline_reports_no_update(): void {
+		$GLOBALS['wp_gh_updater_test_http_response'] = $this->httpResponse(
+			[ 'id' => 123, 'full_name' => 'owner/repo' ]
+		);
+
+		$readiness = [
+			'success'          => true,
+			'current_version'  => '2.0.0',
+			'latest_version'   => '2.0.0',
+			'update_available' => false,
+			'download_url'     => '',
+			'message'          => 'No update available. You have the latest version installed.',
+		];
+
+		$cli = $this->makeCli( $readiness );
+		$cli->test_repo( [], [ 'repository-url' => 'owner/repo' ] );
+
+		$successes = $this->capturedMessages( 'success' );
+		$this->assertGreaterThanOrEqual( 2, count( $successes ) );
+		$this->assertStringContainsString( 'Repository access successful', $successes[0] );
+		$this->assertStringContainsString( 'No update available', $successes[1] );
+	}
+
+	/**
+	 * test-repo reports download URL when update is available.
+	 */
+	public function test_test_repo_pipeline_shows_download_url(): void {
+		$GLOBALS['wp_gh_updater_test_http_response'] = $this->httpResponse(
+			[ 'id' => 123, 'full_name' => 'owner/repo' ]
+		);
+
+		$download_url = 'https://objects.githubusercontent.com/package.zip?token=abc';
+		$readiness = [
+			'success'          => true,
+			'current_version'  => '2.0.0',
+			'latest_version'   => '3.0.0',
+			'update_available' => true,
+			'download_url'     => $download_url,
+			'message'          => 'Update available: 2.0.0 → 3.0.0. Download URL resolved successfully.',
+		];
+
+		$cli = $this->makeCli( $readiness );
+		$cli->test_repo( [], [ 'repository-url' => 'owner/repo' ] );
+
+		$logs = $this->capturedMessages( 'log' );
+		$found_download = false;
+		foreach ( $logs as $log ) {
+			if ( str_contains( $log, $download_url ) ) {
+				$found_download = true;
+				break;
+			}
+		}
+		$this->assertTrue( $found_download, 'Expected download URL in log output.' );
+	}
+
+	// ── update ──────────────────────────────────────────────────────
+
 	// ── check-updates ───────────────────────────────────────────────
 
 	/**
 	 * check-updates reports an available update.
 	 */
 	public function test_check_updates_reports_available_update(): void {
-		$cli = $this->makeCli( [
+		$cli = $this->makeCli( null, [
 			'success'          => true,
 			'current_version'  => '2.0.0',
 			'latest_version'   => '3.0.0',
 			'update_available' => true,
 			'message'          => 'Update available: 2.0.0 → 3.0.0',
+			'release_data'     => [],
 		] );
 
 		$cli->check_updates( [], [] );
@@ -285,6 +433,7 @@ class CLITest extends TestCase {
 		$this->assertNotEmpty( $logs );
 		$this->assertStringContainsString( '2.0.0', $logs[0] );
 		$this->assertStringContainsString( '3.0.0', $logs[1] );
+
 		$this->assertNotEmpty( $successes );
 		$this->assertStringContainsString( 'Update available', $successes[0] );
 	}
@@ -293,31 +442,33 @@ class CLITest extends TestCase {
 	 * check-updates reports no update when already on latest.
 	 */
 	public function test_check_updates_reports_no_update(): void {
-		$cli = $this->makeCli( [
+		$cli = $this->makeCli( null, [
 			'success'          => true,
 			'current_version'  => '2.0.0',
 			'latest_version'   => '2.0.0',
 			'update_available' => false,
 			'message'          => 'You have the latest version installed.',
+			'release_data'     => [],
 		] );
 
 		$cli->check_updates( [], [] );
 
 		$successes = $this->capturedMessages( 'success' );
 		$this->assertNotEmpty( $successes );
-		$this->assertStringContainsString( 'latest version', $successes[0] );
+		$this->assertStringContainsString( 'No update available', $successes[0] );
 	}
 
 	/**
 	 * check-updates propagates updater failure as WP_CLI::error().
 	 */
 	public function test_check_updates_errors_on_updater_failure(): void {
-		$cli = $this->makeCli( [
+		$cli = $this->makeCli( null, [
 			'success'          => false,
 			'current_version'  => '2.0.0',
 			'latest_version'   => '',
 			'update_available' => false,
 			'message'          => 'GitHub API rate limit exceeded.',
+			'release_data'     => null,
 		] );
 
 		$this->expectException( \WPCLITestException::class );
@@ -330,15 +481,20 @@ class CLITest extends TestCase {
 	 * check-updates rejects the --dry flag.
 	 */
 	public function test_check_updates_rejects_dry_flag(): void {
-		$cli = $this->makeCli();
+		$cli = $this->makeCli( null, [
+			'success'          => true,
+			'current_version'  => '2.0.0',
+			'latest_version'   => '2.0.0',
+			'update_available' => false,
+			'message'          => 'You have the latest version installed.',
+			'release_data'     => [],
+		] );
 
 		$this->expectException( \WPCLITestException::class );
 		$this->expectExceptionMessage( '--dry is only supported for the update command' );
 
 		$cli->check_updates( [], [ 'dry' => true ] );
 	}
-
-	// ── update ──────────────────────────────────────────────────────
 
 	/**
 	 * update reports no update when already on latest version.
@@ -349,7 +505,8 @@ class CLITest extends TestCase {
 			'current_version'  => '2.0.0',
 			'latest_version'   => '2.0.0',
 			'update_available' => false,
-			'message'          => 'You have the latest version installed.',
+			'download_url'     => '',
+			'message'          => 'No update available. You have the latest version installed.',
 		] );
 
 		$cli->update( [], [] );
@@ -368,7 +525,8 @@ class CLITest extends TestCase {
 			'current_version'  => '2.0.0',
 			'latest_version'   => '2.0.0',
 			'update_available' => false,
-			'message'          => 'You have the latest version installed.',
+			'download_url'     => '',
+			'message'          => 'No update available. You have the latest version installed.',
 		] );
 
 		$cli->update( [], [ 'dry' => true ] );
@@ -393,7 +551,8 @@ class CLITest extends TestCase {
 			'current_version'  => '2.0.0',
 			'latest_version'   => '3.0.0',
 			'update_available' => true,
-			'message'          => 'Update available: 2.0.0 → 3.0.0',
+			'download_url'     => 'https://objects.githubusercontent.com/package.zip',
+			'message'          => 'Update available: 2.0.0 → 3.0.0. Download URL resolved successfully.',
 		] );
 
 		$cli->update( [], [] );
@@ -411,28 +570,32 @@ class CLITest extends TestCase {
 	}
 
 	/**
-	 * update --dry passes --dry-run flag to WP_CLI::runcommand().
+	 * update --dry reports validated pipeline info without calling runcommand.
 	 */
-	public function test_update_dry_run_passes_dry_run_flag(): void {
-		\WP_CLI::$runcommand_result = (object) [
-			'stdout'      => 'Dry run completed.',
-			'stderr'      => '',
-			'return_code' => 0,
-		];
-
+	public function test_update_dry_run_reports_pipeline_info(): void {
 		$cli = $this->makeCli( [
 			'success'          => true,
 			'current_version'  => '2.0.0',
 			'latest_version'   => '3.0.0',
 			'update_available' => true,
-			'message'          => 'Update available: 2.0.0 → 3.0.0',
+			'download_url'     => 'https://objects.githubusercontent.com/package.zip?token=abc',
+			'message'          => 'Update available: 2.0.0 → 3.0.0. Download URL resolved successfully.',
 		] );
 
 		$cli->update( [], [ 'dry' => true ] );
 
+		// Should NOT call runcommand in dry-run mode.
 		$runcommands = $this->capturedMessages( 'runcommand' );
-		$this->assertNotEmpty( $runcommands );
-		$this->assertStringContainsString( '--dry-run', $runcommands[0] );
+		$this->assertEmpty( $runcommands, 'Dry run should not call runcommand.' );
+
+		// Should output version and download URL info.
+		$logs = $this->capturedMessages( 'log' );
+		$this->assertNotEmpty( $logs );
+
+		$log_text = implode( "\n", $logs );
+		$this->assertStringContainsString( '2.0.0', $log_text );
+		$this->assertStringContainsString( '3.0.0', $log_text );
+		$this->assertStringContainsString( 'Download URL', $log_text );
 
 		$successes = $this->capturedMessages( 'success' );
 		$this->assertNotEmpty( $successes );
@@ -454,7 +617,8 @@ class CLITest extends TestCase {
 			'current_version'  => '2.0.0',
 			'latest_version'   => '3.0.0',
 			'update_available' => true,
-			'message'          => 'Update available: 2.0.0 → 3.0.0',
+			'download_url'     => 'https://objects.githubusercontent.com/package.zip',
+			'message'          => 'Update available: 2.0.0 → 3.0.0. Download URL resolved successfully.',
 		] );
 
 		$this->expectException( \WPCLITestException::class );
@@ -474,7 +638,8 @@ class CLITest extends TestCase {
 			'current_version'  => '2.0.0',
 			'latest_version'   => '3.0.0',
 			'update_available' => true,
-			'message'          => 'Update available: 2.0.0 → 3.0.0',
+			'download_url'     => 'https://objects.githubusercontent.com/package.zip',
+			'message'          => 'Update available: 2.0.0 → 3.0.0. Download URL resolved successfully.',
 		] );
 
 		$this->expectException( \WPCLITestException::class );
@@ -492,6 +657,7 @@ class CLITest extends TestCase {
 			'current_version'  => '2.0.0',
 			'latest_version'   => '',
 			'update_available' => false,
+			'download_url'     => '',
 			'message'          => 'Repository owner and name must be configured',
 		] );
 

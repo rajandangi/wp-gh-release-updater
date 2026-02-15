@@ -63,10 +63,12 @@ class CLI {
 	}
 
 	/**
-  * Test repository access.
+  * Test repository access and validate the full update pipeline.
   *
   * Performs the same validation used by the "Test Repository Access"
-  * button in the updater settings page.
+  * button in the updater settings page, then runs the complete update
+  * pipeline (check for updates, locate release asset, resolve download
+  * URL) to surface problems before an actual upgrade.
   *
   * ## OPTIONS
   *
@@ -113,21 +115,43 @@ class CLI {
 		}
 
 		$this->wpCliCall( 'success', ['Repository access successful!'] );
+
+		// Run full update pipeline validation (asset + download URL resolution).
+		$this->wpCliCall( 'log', ['Running full update pipeline validation...'] );
+		// Use the same repository/token overrides for pipeline validation,
+		// but do not persist any update state into WP options.
+		$readiness = $this->updater->validateUpdateReadiness( $repository_url, $access_token, false );
+
+		$this->wpCliCall( 'log', [sprintf( 'Current version: %s', $readiness['current_version'] )] );
+
+		if ( ! empty( $readiness['latest_version'] ) ) {
+			$this->wpCliCall( 'log', [sprintf( 'Latest version: %s', $readiness['latest_version'] )] );
+		}
+
+		if ( ! $readiness['success'] ) {
+			$this->wpCliCall( 'error', [$readiness['message']] );
+		}
+
+		if ( ! empty( $readiness['download_url'] ) ) {
+			$this->wpCliCall( 'log', [sprintf( 'Download URL: %s', $readiness['download_url'] )] );
+		}
+
+		$this->wpCliCall( 'success', [$readiness['message']] );
 	}
 
 	/**
-  * Check for updates from GitHub releases.
-  *
-  * ## EXAMPLES
-  *
-  *     wp my-plugin check-updates
-  *
-  * @subcommand check-updates
-  *
-  * @param array $args Positional args.
-  * @param array $assoc_args Assoc args.
-  */
- public function check_updates( array $args, array $assoc_args ): void {
+	 * Check for updates from GitHub releases.
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp my-plugin check-updates
+	 *
+	 * @subcommand check-updates
+	 *
+	 * @param array $args Positional args.
+	 * @param array $assoc_args Assoc args.
+	 */
+	public function check_updates( array $args, array $assoc_args ): void {
 		unset( $args );
 
 		if ( array_key_exists( 'dry', $assoc_args ) ) {
@@ -160,7 +184,8 @@ class CLI {
   * ## OPTIONS
   *
   * [--dry]
-  * : Show what would be updated, but skip upgrader execution.
+  * : Validate the full update pipeline (check for updates, locate
+  * release asset, resolve download URL) but skip the actual upgrade.
   *
   * ## EXAMPLES
   *
@@ -174,23 +199,31 @@ class CLI {
 		unset( $args );
 
 		$dry_run = array_key_exists( 'dry', $assoc_args );
-		$result  = $this->updater->checkForUpdatesFresh();
 
-		if ( ! $result['success'] ) {
-			$this->wpCliCall( 'error', [$result['message']] );
+		// Always run the full preflight validation first.
+		$readiness = $this->updater->validateUpdateReadiness();
+
+		if ( ! $readiness['success'] ) {
+			$this->wpCliCall( 'error', [$readiness['message']] );
 		}
 
-		if ( ! $result['update_available'] ) {
+		if ( ! $readiness['update_available'] ) {
 			$this->wpCliCall( 'success', [$dry_run ? 'Dry run: no update available. Plugin is already up to date.' : 'No update available. You have the latest version installed.'] );
 			return;
 		}
 
+		// In dry-run mode, report the validated result and stop.
+		if ( $dry_run ) {
+			$this->wpCliCall( 'log', [sprintf( 'Current version: %s', $readiness['current_version'] )] );
+			$this->wpCliCall( 'log', [sprintf( 'Latest version: %s', $readiness['latest_version'] )] );
+			$this->wpCliCall( 'log', [sprintf( 'Download URL: %s', $readiness['download_url'] )] );
+			$this->wpCliCall( 'success', ['Dry run completed. Update pipeline validated successfully.'] );
+			return;
+		}
+
+		// Proceed with the actual update.
 		$plugin_basename = $this->config->getPluginBasename();
 		$command         = 'plugin update ' . $plugin_basename;
-
-		if ( $dry_run ) {
-			$command .= ' --dry-run';
-		}
 
 		$command_result = $this->wpCliCall(
 			'runcommand',
@@ -213,7 +246,7 @@ class CLI {
 			$this->wpCliCall( 'log', [$stdout] );
 		}
 
-		$this->wpCliCall( 'success', [$dry_run ? 'Dry run completed.' : 'Plugin update completed.'] );
+		$this->wpCliCall( 'success', ['Plugin update completed.'] );
 	}
 
 	/**
