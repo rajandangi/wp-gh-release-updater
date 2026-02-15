@@ -118,7 +118,9 @@ class CLI {
 
 		// Run full update pipeline validation (asset + download URL resolution).
 		$this->wpCliCall( 'log', ['Running full update pipeline validation...'] );
-		$readiness = $this->updater->validateUpdateReadiness();
+		// Use the same repository/token overrides for pipeline validation,
+		// but do not persist any update state into WP options.
+		$readiness = $this->updater->validateUpdateReadiness( $repository_url, $access_token, false );
 
 		$this->wpCliCall( 'log', [sprintf( 'Current version: %s', $readiness['current_version'] )] );
 
@@ -135,6 +137,45 @@ class CLI {
 		}
 
 		$this->wpCliCall( 'success', [$readiness['message']] );
+	}
+
+	/**
+	 * Check for updates from GitHub releases.
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp my-plugin check-updates
+	 *
+	 * @subcommand check-updates
+	 *
+	 * @param array $args Positional args.
+	 * @param array $assoc_args Assoc args.
+	 */
+	public function check_updates( array $args, array $assoc_args ): void {
+		unset( $args );
+
+		if ( array_key_exists( 'dry', $assoc_args ) ) {
+			$this->wpCliCall( 'error', ['--dry is only supported for the update command.'] );
+		}
+
+		$result = $this->updater->checkForUpdatesFresh();
+
+		if ( ! $result['success'] ) {
+			$this->wpCliCall( 'error', [$result['message']] );
+		}
+
+		$this->wpCliCall( 'log', [sprintf( 'Current version: %s', $result['current_version'] )] );
+
+		if ( ! empty( $result['latest_version'] ) ) {
+			$this->wpCliCall( 'log', [sprintf( 'Latest version: %s', $result['latest_version'] )] );
+		}
+
+		if ( $result['update_available'] ) {
+			$this->wpCliCall( 'success', [$result['message']] );
+			return;
+		}
+
+		$this->wpCliCall( 'success', ['No update available. You have the latest version installed.'] );
 	}
 
 	/**

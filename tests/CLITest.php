@@ -86,13 +86,18 @@ class CLITest extends TestCase {
 	 * Build a CLI instance with a mocked Updater.
 	 *
 	 * @param array|null $readiness_result Return value for validateUpdateReadiness().
-	 *                                     Null uses a real Updater.
+	 * @param array|null $check_updates_result Return value for checkForUpdatesFresh().
 	 * @return CLI
 	 */
-	private function makeCli( ?array $readiness_result = null ): CLI {
-		if ( null !== $readiness_result ) {
+	private function makeCli( ?array $readiness_result = null, ?array $check_updates_result = null ): CLI {
+		if ( null !== $readiness_result || null !== $check_updates_result ) {
 			$updater = $this->createMock( Updater::class );
-			$updater->method( 'validateUpdateReadiness' )->willReturn( $readiness_result );
+			if ( null !== $readiness_result ) {
+				$updater->method( 'validateUpdateReadiness' )->willReturn( $readiness_result );
+			}
+			if ( null !== $check_updates_result ) {
+				$updater->method( 'checkForUpdatesFresh' )->willReturn( $check_updates_result );
+			}
 		} else {
 			$github_api = new GitHubAPI( $this->config );
 			$updater    = new Updater( $this->config, $github_api );
@@ -231,7 +236,13 @@ class CLITest extends TestCase {
 			'message'          => 'No update available. You have the latest version installed.',
 		];
 
-		$cli = $this->makeCli( $readiness );
+		$updater = $this->createMock( Updater::class );
+		$updater
+			->expects( $this->once() )
+			->method( 'validateUpdateReadiness' )
+			->with( 'override/repo', '', false )
+			->willReturn( $readiness );
+		$cli = new CLI( $this->config, $updater );
 		$cli->test_repo( [], [ 'repository-url' => 'override/repo' ] );
 
 		$this->assertStringContainsString( '/repos/override/repo', $requested_url );
@@ -268,7 +279,13 @@ class CLITest extends TestCase {
 			'message'          => 'No update available. You have the latest version installed.',
 		];
 
-		$cli = $this->makeCli( $readiness );
+		$updater = $this->createMock( Updater::class );
+		$updater
+			->expects( $this->once() )
+			->method( 'validateUpdateReadiness' )
+			->with( 'owner/repo', 'ghp_override_token', false )
+			->willReturn( $readiness );
+		$cli = new CLI( $this->config, $updater );
 		$cli->test_repo( [], [ 'repository-url' => 'owner/repo', 'access-token' => 'ghp_override_token' ] );
 
 		// Verify the override token was sent in the Authorization header.
@@ -392,6 +409,92 @@ class CLITest extends TestCase {
 	}
 
 	// ── update ──────────────────────────────────────────────────────
+
+	// ── check-updates ───────────────────────────────────────────────
+
+	/**
+	 * check-updates reports an available update.
+	 */
+	public function test_check_updates_reports_available_update(): void {
+		$cli = $this->makeCli( null, [
+			'success'          => true,
+			'current_version'  => '2.0.0',
+			'latest_version'   => '3.0.0',
+			'update_available' => true,
+			'message'          => 'Update available: 2.0.0 → 3.0.0',
+			'release_data'     => [],
+		] );
+
+		$cli->check_updates( [], [] );
+
+		$logs      = $this->capturedMessages( 'log' );
+		$successes = $this->capturedMessages( 'success' );
+
+		$this->assertNotEmpty( $logs );
+		$this->assertStringContainsString( '2.0.0', $logs[0] );
+		$this->assertStringContainsString( '3.0.0', $logs[1] );
+
+		$this->assertNotEmpty( $successes );
+		$this->assertStringContainsString( 'Update available', $successes[0] );
+	}
+
+	/**
+	 * check-updates reports no update when already on latest.
+	 */
+	public function test_check_updates_reports_no_update(): void {
+		$cli = $this->makeCli( null, [
+			'success'          => true,
+			'current_version'  => '2.0.0',
+			'latest_version'   => '2.0.0',
+			'update_available' => false,
+			'message'          => 'You have the latest version installed.',
+			'release_data'     => [],
+		] );
+
+		$cli->check_updates( [], [] );
+
+		$successes = $this->capturedMessages( 'success' );
+		$this->assertNotEmpty( $successes );
+		$this->assertStringContainsString( 'No update available', $successes[0] );
+	}
+
+	/**
+	 * check-updates propagates updater failure as WP_CLI::error().
+	 */
+	public function test_check_updates_errors_on_updater_failure(): void {
+		$cli = $this->makeCli( null, [
+			'success'          => false,
+			'current_version'  => '2.0.0',
+			'latest_version'   => '',
+			'update_available' => false,
+			'message'          => 'GitHub API rate limit exceeded.',
+			'release_data'     => null,
+		] );
+
+		$this->expectException( \WPCLITestException::class );
+		$this->expectExceptionMessage( 'rate limit' );
+
+		$cli->check_updates( [], [] );
+	}
+
+	/**
+	 * check-updates rejects the --dry flag.
+	 */
+	public function test_check_updates_rejects_dry_flag(): void {
+		$cli = $this->makeCli( null, [
+			'success'          => true,
+			'current_version'  => '2.0.0',
+			'latest_version'   => '2.0.0',
+			'update_available' => false,
+			'message'          => 'You have the latest version installed.',
+			'release_data'     => [],
+		] );
+
+		$this->expectException( \WPCLITestException::class );
+		$this->expectExceptionMessage( '--dry is only supported for the update command' );
+
+		$cli->check_updates( [], [ 'dry' => true ] );
+	}
 
 	/**
 	 * update reports no update when already on latest version.

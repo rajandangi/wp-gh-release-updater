@@ -65,6 +65,17 @@ class Updater {
 	 * @return array Update check result
 	 */
 	public function checkForUpdates() {
+		return $this->checkForUpdatesWithApi( $this->github_api, true );
+	}
+
+	/**
+	 * Core update check logic.
+	 *
+	 * @param GitHubAPI $github_api GitHub API instance.
+	 * @param bool      $persist_options Whether to persist update state (latest_version, update_available, release_snapshot).
+	 * @return array Update check result.
+	 */
+	private function checkForUpdatesWithApi( GitHubAPI $github_api, bool $persist_options = true ): array {
 		$result = array(
 			'success'          => false,
 			'current_version'  => $this->current_version,
@@ -76,7 +87,7 @@ class Updater {
 
 		try {
 			// Get latest release from GitHub
-			$release_data = $this->github_api->getLatestRelease();
+			$release_data = $github_api->getLatestRelease();
 
 			if ( is_wp_error( $release_data ) ) {
 				$result['message'] = $release_data->get_error_message();
@@ -119,19 +130,21 @@ class Updater {
 				$result['message'] = 'You have the latest version installed.';
 			}
 
-			// Update WordPress options with release snapshot
-			$this->config->updateOption( 'latest_version', $latest_version );
-			$this->config->updateOption( 'update_available', $result['update_available'] );
-			$this->config->updateOption( 'last_checked', time() );
-			// Store release data snapshot to prevent race conditions
-			$release_snapshot = array(
-				'version'      => $latest_version,
-				'tag_name'     => $release_data['tag_name'],
-				'published_at' => $release_data['published_at'] ?? '',
-				'assets'       => $release_data['assets'] ?? array(),
-				'html_url'     => $release_data['html_url'] ?? '',
-			);
-			$this->config->updateOption( 'release_snapshot', $release_snapshot );
+			if ( $persist_options ) {
+				// Update WordPress options with release snapshot
+				$this->config->updateOption( 'latest_version', $latest_version );
+				$this->config->updateOption( 'update_available', $result['update_available'] );
+				$this->config->updateOption( 'last_checked', time() );
+				// Store release data snapshot to prevent race conditions
+				$release_snapshot = array(
+					'version'      => $latest_version,
+					'tag_name'     => $release_data['tag_name'],
+					'published_at' => $release_data['published_at'] ?? '',
+					'assets'       => $release_data['assets'] ?? array(),
+					'html_url'     => $release_data['html_url'] ?? '',
+				);
+				$this->config->updateOption( 'release_snapshot', $release_snapshot );
+			}
 
 		} catch ( \Exception $e ) {
 			$result['message'] = 'Error checking for updates: ' . $e->getMessage();
@@ -153,7 +166,7 @@ class Updater {
 		$this->github_api->clearCache();
 		delete_site_transient( 'update_plugins' );
 
-		return $this->checkForUpdates();
+		return $this->checkForUpdatesWithApi( $this->github_api, true );
 	}
 
 	/**
@@ -174,7 +187,7 @@ class Updater {
 	 *     message: string,
 	 * }
 	 */
-	public function validateUpdateReadiness(): array {
+	public function validateUpdateReadiness( ?string $repository_url = null, ?string $access_token = null, bool $persist_options = true ): array {
 		$result = array(
 			'success'          => false,
 			'current_version'  => $this->current_version,
@@ -184,8 +197,28 @@ class Updater {
 			'message'          => '',
 		);
 
+		$repo_url = null !== $repository_url ? trim( (string) $repository_url ) : trim( (string) $this->config->getOption( 'repository_url', '' ) );
+		$token    = null !== $access_token ? trim( (string) $access_token ) : trim( (string) $this->config->getAccessToken() );
+		$api      = $this->github_api;
+
+		// If overrides are provided, validate and use a separate GitHubAPI instance.
+		if ( null !== $repository_url || null !== $access_token ) {
+			if ( '' === $repo_url ) {
+				$result['message'] = 'Repository URL is empty. Save settings first or pass --repository-url.';
+				return $result;
+			}
+
+			$api = new GitHubAPI( $this->config );
+			if ( ! $api->setRepositoryFromUrl( $repo_url, $token ) ) {
+				$result['message'] = 'Invalid repository URL format. Use owner/repo or https://github.com/owner/repo';
+				return $result;
+			}
+		}
+
 		// Step 1 — Check for updates (clears cache first).
-		$check = $this->checkForUpdatesFresh();
+		$api->clearCache();
+		delete_site_transient( 'update_plugins' );
+		$check = $this->checkForUpdatesWithApi( $api, $persist_options );
 
 		if ( ! $check['success'] ) {
 			$result['message'] = $check['message'];
@@ -204,7 +237,7 @@ class Updater {
 
 		// Step 2 — Locate matching asset and resolve download URL.
 		$release_data = $check['release_data'] ?? array();
-		$download_url = $this->findDownloadAsset( $release_data );
+		$download_url = $this->findDownloadAsset( $release_data, $token );
 
 		if ( '' === $download_url ) {
 			$result['message'] = 'Update available but no downloadable asset found. Check release assets on GitHub.';
@@ -364,7 +397,7 @@ class Updater {
 	 * @param array $release_data GitHub release data.
 	 * @return string Resolved download URL or empty string.
 	 */
-	private function findDownloadAsset( $release_data ) {
+	private function findDownloadAsset( $release_data, string $token = '' ) {
 		if ( empty( $release_data['assets'] ) ) {
 			Logger::log( $this->config, 'ERROR', 'Updater', 'No assets found in release. Please upload a proper build ZIP file.', array( 'action' => 'Download' ) );
 			return '';
@@ -395,7 +428,7 @@ class Updater {
 			return '';
 		}
 
-		$download_url = $this->resolveAssetDownloadUrl( $asset );
+		$download_url = $this->resolveAssetDownloadUrl( $asset, $token );
 
 		if ( '' === $download_url ) {
 			Logger::log( $this->config, 'ERROR', 'Updater', 'Could not resolve download URL for asset.', array( 'action' => 'Download', 'asset' => $asset['name'] ) );
@@ -458,8 +491,8 @@ class Updater {
 	 * @param array $asset Single asset entry from the GitHub release payload.
 	 * @return string Direct download URL, or empty string on failure.
 	 */
-	private function resolveAssetDownloadUrl( array $asset ): string {
-		$token = trim( (string) $this->config->getAccessToken() );
+	private function resolveAssetDownloadUrl( array $asset, string $token = '' ): string {
+		$token = trim( (string) $token );
 
 		// Public repo — browser_download_url works without auth.
 		if ( '' === $token && ! empty( $asset['browser_download_url'] ) ) {
