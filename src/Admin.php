@@ -240,21 +240,39 @@ class Admin {
 	 * @return string Encrypted token
 	 */
 	public function sanitizeAccessToken( $token ) {
-		// If token is masked (all asterisks), keep the existing encrypted token
+		$token = is_string( $token ) ? trim( $token ) : '';
+
+		// If token is masked (all asterisks), keep the existing encrypted token.
 		if ( preg_match( '/^\*+$/', $token ) ) {
 			return $this->config->getOption( 'access_token', '' );
 		}
 
-		// If empty, delete the token
-		if ( in_array(trim( $token ), ['', '0'], true) ) {
+		// If empty, delete the token.
+		if ( '' === $token || '0' === $token ) {
 			return '';
 		}
 
-		// Sanitize then encrypt the new token
+		$existing_encrypted = (string) $this->config->getOption( 'access_token', '' );
+
+		// If an already-encrypted value is submitted again, keep it as-is.
+		if ( '' !== $existing_encrypted && hash_equals( $existing_encrypted, $token ) ) {
+			return $existing_encrypted;
+		}
+
+		// Prevent accidental double-encryption when an encrypted value is posted.
+		if ( '' !== $this->config->decrypt( $token ) ) {
+			return $token;
+		}
+
+		// Sanitize then encrypt the new token.
 		$sanitized_token = sanitize_text_field( $token );
 
-		// Return the encrypted token directly
-		// WordPress will save this via update_option
+		if ( '' === $sanitized_token || '0' === $sanitized_token ) {
+			return '';
+		}
+
+		// Return the encrypted token directly.
+		// WordPress will save this via update_option.
 		return $this->config->encrypt( $sanitized_token );
 	}
 

@@ -750,9 +750,21 @@ class Config {
 	 * @return bool Success status
 	 */
 	public function saveAccessToken( $token ) {
-		if ( empty( $token ) ) {
+		$token = is_string( $token ) ? trim( $token ) : '';
+
+		if ( '' === $token || '0' === $token ) {
 			// If token is empty, delete the option
 			return $this->deleteOption( 'access_token' );
+		}
+
+		$existing_encrypted = (string) $this->getOption( 'access_token', '' );
+		if ( '' !== $existing_encrypted && hash_equals( $existing_encrypted, $token ) ) {
+			return true;
+		}
+
+		// If an encrypted value is passed in, store it directly.
+		if ( '' !== $this->decrypt( $token ) ) {
+			return $this->updateOption( 'access_token', $token );
 		}
 
 		$encrypted_token = $this->encrypt( $token );

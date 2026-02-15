@@ -13,6 +13,30 @@ if (!defined('WPINC')) {
   define('WPINC', 'wp-includes');
 }
 
+if (!defined('AUTH_KEY')) {
+  define('AUTH_KEY', 'test-auth-key');
+}
+
+if (!defined('SECURE_AUTH_KEY')) {
+  define('SECURE_AUTH_KEY', 'test-secure-auth-key');
+}
+
+if (!defined('LOGGED_IN_KEY')) {
+  define('LOGGED_IN_KEY', 'test-logged-in-key');
+}
+
+if (!defined('NONCE_KEY')) {
+  define('NONCE_KEY', 'test-nonce-key');
+}
+
+if (!isset($GLOBALS['wp_gh_updater_test_options']) || !is_array($GLOBALS['wp_gh_updater_test_options'])) {
+  $GLOBALS['wp_gh_updater_test_options'] = [];
+}
+
+if (!isset($GLOBALS['wpdb']) || !is_object($GLOBALS['wpdb'])) {
+  $GLOBALS['wpdb'] = (object) ['prefix' => 'wp_'];
+}
+
 // WordPress functions stubs for PHPStan
 if (!function_exists('wp_die')) {
   function wp_die(string $message = ''): void {
@@ -39,25 +63,42 @@ if (!function_exists('current_user_can')) {
 
 if (!function_exists('get_option')) {
   function get_option(string $option, mixed $default = false): mixed {
+    if (array_key_exists($option, $GLOBALS['wp_gh_updater_test_options'])) {
+      return $GLOBALS['wp_gh_updater_test_options'][$option];
+    }
+
     return $default;
   }
 }
 
 if (!function_exists('update_option')) {
   function update_option(string $option, mixed $value): bool {
+    $GLOBALS['wp_gh_updater_test_options'][$option] = $value;
     return true;
   }
 }
 
 if (!function_exists('add_option')) {
   function add_option(string $option, mixed $value): bool {
+    if (array_key_exists($option, $GLOBALS['wp_gh_updater_test_options'])) {
+      return false;
+    }
+
+    $GLOBALS['wp_gh_updater_test_options'][$option] = $value;
     return true;
   }
 }
 
 if (!function_exists('delete_option')) {
   function delete_option(string $option): bool {
+    unset($GLOBALS['wp_gh_updater_test_options'][$option]);
     return true;
+  }
+}
+
+if (!function_exists('wp_salt')) {
+  function wp_salt(string $scheme = 'auth'): string {
+    return 'test-salt-' . $scheme;
   }
 }
 
@@ -100,6 +141,32 @@ if (!function_exists('plugin_dir_path')) {
 if (!function_exists('plugin_dir_url')) {
   function plugin_dir_url(string $file): string {
     return 'https://example.com/wp-content/plugins/' . basename(dirname($file)) . '/';
+  }
+}
+
+if (!function_exists('wp_normalize_path')) {
+  function wp_normalize_path(string $path): string {
+    return str_replace('\\', '/', $path);
+  }
+}
+
+if (!function_exists('trailingslashit')) {
+  function trailingslashit(string $value): string {
+    return rtrim($value, '/\\') . '/';
+  }
+}
+
+if (!function_exists('untrailingslashit')) {
+  function untrailingslashit(string $value): string {
+    return rtrim($value, '/\\');
+  }
+}
+
+if (!function_exists('sanitize_title')) {
+  function sanitize_title(string $title): string {
+    $title = strtolower($title);
+    $title = preg_replace('/[^a-z0-9_-]+/', '-', $title);
+    return trim((string) $title, '-');
   }
 }
 
