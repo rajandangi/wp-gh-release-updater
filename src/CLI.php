@@ -170,7 +170,7 @@ class CLI {
   * @param array $args Positional args.
   * @param array $assoc_args Assoc args.
   */
- public function update( array $args, array $assoc_args ): void {
+	public function update( array $args, array $assoc_args ): void {
 		unset( $args );
 
 		$dry_run = array_key_exists( 'dry', $assoc_args );
@@ -217,6 +217,53 @@ class CLI {
 	}
 
 	/**
+	 * Decrypt and print the currently stored access token.
+	 *
+	 * Use this command for debugging when you need to verify the saved token.
+	 * Output is sensitive.
+	 *
+	 * ## OPTIONS
+	 *
+	 * [--raw]
+	 * : Print only the decrypted token value.
+	 *
+	 * ## EXAMPLES
+	 *
+	 *     wp my-plugin decrypt-token
+	 *     wp my-plugin decrypt-token --raw
+	 *
+	 * @subcommand decrypt-token
+	 *
+	 * @param array $args Positional args.
+	 * @param array $assoc_args Assoc args.
+	 */
+	public function decrypt_token( array $args, array $assoc_args ): void {
+		unset( $args );
+
+		$encrypted_token = trim( (string) $this->config->getOption( 'access_token', '' ) );
+
+		if ( '' === $encrypted_token ) {
+			$this->wpCliCall( 'error', ['No access token is currently stored.'] );
+		}
+
+		$decrypted_token = $this->config->decrypt( $encrypted_token );
+
+		if ( '' === $decrypted_token ) {
+			$this->wpCliCall( 'error', ['Stored access token could not be decrypted. It may be corrupted or encrypted with different salts.'] );
+		}
+
+		if ( array_key_exists( 'raw', $assoc_args ) ) {
+			$this->wpCliCall( 'line', [$decrypted_token] );
+			return;
+		}
+
+		$this->wpCliCall( 'warning', ['Displaying decrypted access token. Treat this output as sensitive.'] );
+		$this->wpCliCall( 'log', [sprintf( 'Token (masked): %s', $this->maskToken( $decrypted_token ) )] );
+		$this->wpCliCall( 'log', [sprintf( 'Token (decrypted): %s', $decrypted_token )] );
+		$this->wpCliCall( 'success', ['Access token decrypted.'] );
+	}
+
+	/**
   * Resolve repository URL from CLI arguments or stored config.
   *
   * @param array $assoc_args Assoc CLI args.
@@ -236,7 +283,7 @@ class CLI {
   *
   * @param array $assoc_args Assoc CLI args.
   */
- private function resolveAccessToken( array $assoc_args ): string {
+	private function resolveAccessToken( array $assoc_args ): string {
 		$access_token = $this->config->getAccessToken();
 
 		if ( isset( $assoc_args['access-token'] ) ) {
@@ -244,6 +291,21 @@ class CLI {
 		}
 
 		return trim( (string) $access_token );
+	}
+
+	/**
+  * Mask token for safer display.
+  *
+  * @param string $token Raw token value.
+  */
+ private function maskToken( string $token ): string {
+		$length = strlen( $token );
+
+		if ( $length <= 8 ) {
+			return str_repeat( '*', $length );
+		}
+
+		return substr( $token, 0, 4 ) . str_repeat( '*', $length - 8 ) . substr( $token, -4 );
 	}
 
 	/**
