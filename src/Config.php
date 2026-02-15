@@ -750,9 +750,21 @@ class Config {
 	 * @return bool Success status
 	 */
 	public function saveAccessToken( $token ) {
-		if ( empty( $token ) ) {
+		$token = is_string( $token ) ? trim( $token ) : '';
+
+		if ( '' === $token || '0' === $token ) {
 			// If token is empty, delete the option
 			return $this->deleteOption( 'access_token' );
+		}
+
+		$existing_encrypted = (string) $this->getOption( 'access_token', '' );
+		if ( '' !== $existing_encrypted && hash_equals( $existing_encrypted, $token ) ) {
+			return true;
+		}
+
+		// If an encrypted value is passed in, store it directly.
+		if ( '' !== $this->decrypt( $token ) ) {
+			return $this->updateOption( 'access_token', $token );
 		}
 
 		$encrypted_token = $this->encrypt( $token );
@@ -795,16 +807,15 @@ class Config {
 	}
 
 	/**
-	 * Resolve the updater URL from __DIR__ relative to the plugin root.
-	 *
-	 * Works regardless of whether the package lives in vendor/ or vendor_prefixed/.
-	 *
-	 * @param string $plugin_file Main plugin file path.
-	 * @return string
-	 */
-	private function resolveUpdaterUrl( string $plugin_file ): string {
-		$plugin_dir_real = realpath( dirname( (string) $plugin_file ) );
-		$plugin_dir      = wp_normalize_path( false !== $plugin_dir_real ? $plugin_dir_real : dirname( (string) $plugin_file ) );
+  * Resolve the updater URL from __DIR__ relative to the plugin root.
+  *
+  * Works regardless of whether the package lives in vendor/ or vendor_prefixed/.
+  *
+  * @param string $plugin_file Main plugin file path.
+  */
+ private function resolveUpdaterUrl( string $plugin_file ): string {
+		$plugin_dir_real = realpath( dirname( $plugin_file ) );
+		$plugin_dir      = wp_normalize_path( false !== $plugin_dir_real ? $plugin_dir_real : dirname( $plugin_file ) );
 
 		$updater_dir_real = realpath( __DIR__ );
 		$updater_dir      = wp_normalize_path( false !== $updater_dir_real ? $updater_dir_real : __DIR__ );

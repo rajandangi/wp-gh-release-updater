@@ -124,6 +124,7 @@ Available commands:
 - `test-repo` - same behavior as **Test Repository Access** in wp-admin
 - `check-updates` - checks GitHub for latest release and prints status
 - `update` - performs plugin update using WordPress upgrader flow
+- `decrypt-token` - decrypts and prints the currently stored access token (sensitive output)
 
 Examples:
 
@@ -140,6 +141,12 @@ wp mu-plugin-updater update
 # Dry-run update flow (no upgrader execution)
 wp mu-plugin-updater update --dry
 
+# Decrypt and print the saved token (sensitive)
+wp mu-plugin-updater decrypt-token
+
+# Print only the raw decrypted token
+wp mu-plugin-updater decrypt-token --raw
+
 # Override repository URL for one-off testing
 wp mu-plugin-updater test-repo --repository-url=owner/repo
 
@@ -148,6 +155,8 @@ wp mu-plugin-updater test-repo --access-token=github_pat_xxx
 ```
 
 `test-repo` performs the same repository access validation as **Test Repository Access** in the updater settings page.
+
+`decrypt-token` is intended for debugging. Treat command output as sensitive and avoid sharing it in logs.
 
 To customize the base command and avoid naming conflicts, pass `cli_command` when creating the manager:
 
