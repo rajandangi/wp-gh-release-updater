@@ -19,6 +19,11 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Admin {
 
 	/**
+	 * Settings page hook suffix returned by WordPress.
+	 */
+	private ?string $settings_hook = null;
+
+	/**
 	 * Constructor
 	 *
 	 * @param Config    $config Configuration instance.
@@ -61,13 +66,28 @@ class Admin {
 	 * Add admin menu page
 	 */
 	public function addAdminMenu(): void {
-		add_management_page(
-			$this->config->getPageTitle(),
-			$this->config->getMenuTitle(),
-			$this->config->getCapability(),
-			$this->config->getSettingsPageSlug(),
-			$this->displaySettingsPage(...)
-		);
+		$menu_parent = $this->config->getMenuParent();
+
+		if ( 'tools.php' === $menu_parent ) {
+			$settings_hook = add_management_page(
+				$this->config->getPageTitle(),
+				$this->config->getMenuTitle(),
+				$this->config->getCapability(),
+				$this->config->getSettingsPageSlug(),
+				$this->displaySettingsPage(...)
+			);
+		} else {
+			$settings_hook = add_submenu_page(
+				$menu_parent,
+				$this->config->getPageTitle(),
+				$this->config->getMenuTitle(),
+				$this->config->getCapability(),
+				$this->config->getSettingsPageSlug(),
+				$this->displaySettingsPage(...)
+			);
+		}
+
+		$this->settings_hook = is_string( $settings_hook ) ? $settings_hook : null;
 	}
 
 	/**
@@ -133,10 +153,7 @@ class Admin {
 		}
 
 		// Enqueue settings page scripts
-		$menu_parent_prefix = str_replace( '.php', '', $this->config->getMenuParent() );
-		$expected_hook      = $menu_parent_prefix . '_page_' . $this->config->getSettingsPageSlug();
-
-		if ( $hook !== $expected_hook ) {
+		if ( null === $this->settings_hook || $hook !== $this->settings_hook ) {
 			return;
 		}
 
@@ -325,11 +342,7 @@ class Admin {
 	public function showAdminNotices(): void {
 		$screen = get_current_screen();
 
-		// Determine the menu parent prefix for the page hook
-		$menu_parent_prefix = str_replace( '.php', '', $this->config->getMenuParent() );
-		$expected_screen_id = $menu_parent_prefix . '_page_' . $this->config->getSettingsPageSlug();
-
-		if ( $screen->id !== $expected_screen_id ) {
+		if ( null === $this->settings_hook || null === $screen || $screen->id !== $this->settings_hook ) {
 			return;
 		}
 
