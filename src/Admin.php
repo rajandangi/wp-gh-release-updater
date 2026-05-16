@@ -327,7 +327,7 @@ class Admin {
 
 		if ( is_wp_error( $test_result ) ) {
 			wp_send_json(
-				['success' => false, 'message' => $test_result->get_error_message()]
+				['success' => false, 'message' => Logger::redact( $test_result->get_error_message() )]
 			);
 		} else {
 			wp_send_json(
@@ -422,7 +422,7 @@ class Admin {
 				['message' => $result['message']]
 			);
 
-			wp_send_json_error( ['message' => $result['message']] );
+			wp_send_json_error( ['message' => Logger::redact( $result['message'] )] );
 		}
 	}
 }
