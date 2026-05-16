@@ -49,6 +49,22 @@ if (!isset($GLOBALS['wp_gh_updater_test_localized_scripts']) || !is_array($GLOBA
   $GLOBALS['wp_gh_updater_test_localized_scripts'] = [];
 }
 
+if (!isset($GLOBALS['wp_gh_updater_test_actions']) || !is_array($GLOBALS['wp_gh_updater_test_actions'])) {
+  $GLOBALS['wp_gh_updater_test_actions'] = [];
+}
+
+if (!isset($GLOBALS['wp_gh_updater_test_filters']) || !is_array($GLOBALS['wp_gh_updater_test_filters'])) {
+  $GLOBALS['wp_gh_updater_test_filters'] = [];
+}
+
+if (!array_key_exists('wp_gh_updater_test_is_admin', $GLOBALS)) {
+  $GLOBALS['wp_gh_updater_test_is_admin'] = true;
+}
+
+if (!array_key_exists('wp_gh_updater_test_wp_cli', $GLOBALS)) {
+  $GLOBALS['wp_gh_updater_test_wp_cli'] = true;
+}
+
 // WordPress functions stubs for PHPStan
 if (!function_exists('wp_die')) {
   function wp_die(string $message = ''): void {
@@ -57,13 +73,38 @@ if (!function_exists('wp_die')) {
 
 if (!function_exists('add_action')) {
   function add_action(string $hook, callable $callback, int $priority = 10, int $accepted_args = 1): bool {
+    $GLOBALS['wp_gh_updater_test_actions'][] = [
+      'hook' => $hook,
+      'callback' => $callback,
+      'priority' => $priority,
+      'accepted_args' => $accepted_args,
+    ];
+
     return true;
   }
 }
 
 if (!function_exists('add_filter')) {
   function add_filter(string $hook, callable $callback, int $priority = 10, int $accepted_args = 1): bool {
+    $GLOBALS['wp_gh_updater_test_filters'][] = [
+      'hook' => $hook,
+      'callback' => $callback,
+      'priority' => $priority,
+      'accepted_args' => $accepted_args,
+    ];
+
     return true;
+  }
+}
+
+if (!function_exists('do_action')) {
+  function do_action(string $hook, mixed ...$args): void {
+    $GLOBALS['wp_gh_updater_test_actions'][] = [
+      'hook' => $hook,
+      'callback' => null,
+      'priority' => 10,
+      'accepted_args' => count($args),
+    ];
   }
 }
 
