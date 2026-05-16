@@ -91,7 +91,7 @@ class CLITest extends TestCase {
 	 */
 	private function makeCli( ?array $readiness_result = null, ?array $check_updates_result = null ): CLI {
 		if ( null !== $readiness_result || null !== $check_updates_result ) {
-			$updater = $this->createMock( Updater::class );
+			$updater = $this->createStub( Updater::class );
 			if ( null !== $readiness_result ) {
 				$updater->method( 'validateUpdateReadiness' )->willReturn( $readiness_result );
 			}
@@ -303,6 +303,8 @@ class CLITest extends TestCase {
 			'response' => [ 'code' => 404, 'message' => 'Not Found' ],
 			'headers'  => [],
 		];
+
+		$this->expectOutputRegex( '/GitHub repository or release not found/' );
 
 		$cli = $this->makeCli();
 		try {

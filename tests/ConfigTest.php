@@ -1,6 +1,6 @@
 <?php
 /**
- * Basic Test
+ * Config/bootstrap tests.
  *
  * @package WPGitHubReleaseUpdater
  */
@@ -10,9 +10,9 @@ namespace WPGitHubReleaseUpdater\Tests;
 use PHPUnit\Framework\TestCase;
 
 /**
- * Basic Test Class
+ * Config/bootstrap test class.
  */
-class BasicTest extends TestCase {
+class ConfigTest extends TestCase {
 
 	/**
 	 * Test that autoloader is working
