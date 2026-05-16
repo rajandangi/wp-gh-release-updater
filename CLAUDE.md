@@ -33,6 +33,8 @@ GitHub workflows exist under `.github/workflows/` (branch-scoped, not every push
 - `make test-cli-commands` — smoke test: `--help`, `register-cli`, `test-repo`, `check-updates`, `update --dry`, `decrypt-token`. Does **not** run a real `update`
 - `make test-release-update` — sync, lower the test plugin's `Version:` header, then run the full update flow end-to-end against a real GitHub release (this is the only target that exercises `update` for real)
 
+If `LOCAL_TEST_CONTEXT.md` exists, read it before running local integration or browser smoke tests. It documents machine-local test fixtures that should not be committed.
+
 WP-CLI commands the package registers (default base = plugin directory slug, override via `cli_command` in config):
 
 - `wp <slug> test-repo` — validate repo access
