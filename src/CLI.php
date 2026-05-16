@@ -223,11 +223,15 @@ class CLI {
 
 		// Proceed with the actual update.
 		$plugin_basename = $this->config->getPluginBasename();
-		$command         = 'plugin update ' . $plugin_basename;
+		$command         = 'plugin update ' . escapeshellarg( $plugin_basename );
 
+		// Run the WordPress plugin updater in a separate WP-CLI process.
+		// Updating the plugin that owns the current command inside the same
+		// PHP process can leave the parent command holding stale loaded code
+		// and updater state after the files have been replaced.
 		$command_result = $this->wpCliCall(
 			'runcommand',
-			[$command, ['return'     => 'all', 'launch'     => false, 'exit_error' => false]]
+			[$command, ['return'     => 'all', 'launch'     => true, 'exit_error' => false]]
 		);
 
 		if ( ! is_object( $command_result ) ) {

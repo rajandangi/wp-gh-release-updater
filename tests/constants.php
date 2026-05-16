@@ -376,6 +376,9 @@ if (!class_exists('WP_CLI')) {
     /** @var object|null */
     public static $runcommand_result = null;
 
+    /** @var array<string, mixed> */
+    public static array $runcommand_options = [];
+
     public static function error(string $message): void {
       self::$captured[] = ['method' => 'error', 'message' => $message];
       throw new WPCLITestException($message);
@@ -404,12 +407,14 @@ if (!class_exists('WP_CLI')) {
 
     public static function runcommand(string $command, array $options = []): mixed {
       self::$captured[] = ['method' => 'runcommand', 'message' => $command];
+      self::$runcommand_options = $options;
       return self::$runcommand_result;
     }
 
     public static function reset(): void {
       self::$captured = [];
       self::$runcommand_result = null;
+      self::$runcommand_options = [];
     }
   }
 }

@@ -561,7 +561,11 @@ class CLITest extends TestCase {
 		$runcommands = $this->capturedMessages( 'runcommand' );
 		$this->assertNotEmpty( $runcommands );
 		$this->assertStringContainsString( 'plugin update', $runcommands[0] );
+		$this->assertStringContainsString( escapeshellarg( $this->config->getPluginBasename() ), $runcommands[0] );
 		$this->assertStringNotContainsString( '--dry-run', $runcommands[0] );
+		$this->assertSame( 'all', \WP_CLI::$runcommand_options['return'] );
+		$this->assertTrue( \WP_CLI::$runcommand_options['launch'] );
+		$this->assertFalse( \WP_CLI::$runcommand_options['exit_error'] );
 
 		// Verify success message.
 		$successes = $this->capturedMessages( 'success' );
