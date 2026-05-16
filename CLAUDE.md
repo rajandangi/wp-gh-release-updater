@@ -40,7 +40,7 @@ WP-CLI commands the package registers (default base = plugin directory slug, ove
 - `wp <slug> test-repo` — validate repo access
 - `wp <slug> check-updates` — query latest release
 - `wp <slug> update [--dry]` — run WordPress upgrader flow
-- `wp <slug> decrypt-token [--raw]` — debug only; prints decrypted token
+- `wp <slug> decrypt-token [--raw]` — debug only; default verifies decryption by printing token length plus a warning; `--raw` is required to print the plaintext token
 - `wp <slug> register` — **incidentally exposed**. `CLI::register()` is `public` so WP-CLI picks it up as a subcommand even though its job is wiring `add_command` at boot. Not part of the documented API. Either treat it as internal-only or make it non-public in a follow-up.
 
 ## Architecture
