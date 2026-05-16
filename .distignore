@@ -9,12 +9,16 @@
 .distignore
 
 # Development files
+AGENTS.md
+CLAUDE.md
 tests/
 node_modules/
 *.zip
 *.tar.gz
 
 # Code quality tools
+.phpunit.result.cache
+phpunit.xml
 .phpcs.cache
 .phpcs-cache
 phpcs.xml
