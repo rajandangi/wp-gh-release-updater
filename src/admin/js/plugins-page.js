@@ -6,38 +6,34 @@
  */
 
 (() => {
-	// Wait for DOM to be ready
-	if (document.readyState === 'loading') {
-		document.addEventListener('DOMContentLoaded', init);
-	} else {
-		init();
-	}
-
-	function init() {
-		// Get plugin slug from localized data
-		const slug = window.pluginUpdaterConfig?.slug;
-
-		if (!slug) {
-			console.error('Plugin slug not provided');
+	document.addEventListener('click', (event) => {
+		if (event.__wpGhUpdaterHandled === true) {
 			return;
 		}
 
-		// Delegate click events for "Check for Updates" links
-		document.addEventListener('click', (e) => {
-			const link = e.target.closest(`.${slug}-check-updates`);
-			if (!link) return;
+		const target = event.target instanceof Element ? event.target : null;
+		const link = target?.closest('[data-wp-gh-release-updater-check]');
 
-			e.preventDefault();
-			handleCheckUpdates(link, slug);
-		});
-	}
+		if (!link) {
+			return;
+		}
 
-	function handleCheckUpdates(link, slug) {
+		event.__wpGhUpdaterHandled = true;
+		event.preventDefault();
+		handleCheckUpdates(link);
+	});
+
+	function handleCheckUpdates(link) {
+		const action = link.getAttribute('data-action');
+		const ajaxUrl = link.getAttribute('data-ajax-url');
 		const plugin = link.getAttribute('data-plugin');
 		const nonce = link.getAttribute('data-nonce');
 		const originalText = link.textContent;
 
-		const ajaxAction = `${slug}_check_updates_quick`;
+		if (!action || !ajaxUrl || !plugin || !nonce) {
+			console.error('Updater link is missing required data attributes');
+			return;
+		}
 
 		// Show loading state
 		link.textContent = 'Checking...';
@@ -46,12 +42,12 @@
 
 		// Prepare form data
 		const formData = new FormData();
-		formData.append('action', ajaxAction);
+		formData.append('action', action);
 		formData.append('plugin', plugin);
 		formData.append('nonce', nonce);
 
 		// Make AJAX request
-		fetch(ajaxurl, {
+		fetch(ajaxUrl, {
 			method: 'POST',
 			credentials: 'same-origin',
 			body: formData,
@@ -61,7 +57,7 @@
 					throw new Error('Network response was not ok');
 				}
 				const contentType = response.headers.get('content-type');
-				if (!contentType || !contentType.includes('application/json')) {
+				if (!contentType?.includes('application/json')) {
 					throw new Error('Server returned non-JSON response');
 				}
 				return response.json();

@@ -129,13 +129,6 @@ class Admin {
 				$this->config->getPluginVersion(),
 				true
 			);
-
-			// Pass plugin slug to JavaScript
-			wp_localize_script(
-				$script_handle,
-				'pluginUpdaterConfig',
-				['slug' => $this->config->getPluginSlug()]
-			);
 			return;
 		}
 
@@ -365,11 +358,14 @@ class Admin {
 	 * @return array Modified links
 	 */
 	public function addPluginActionLinks( $links ): array {
+		$action = $this->config->getPluginSlug() . '_check_updates_quick';
+
 		$check_updates_link = sprintf(
-			'<a href="#" class="%s-check-updates" data-plugin="%s" data-nonce="%s">%s</a>',
-			esc_attr( $this->config->getPluginSlug() ),
+			'<a href="#" data-wp-gh-release-updater-check="1" data-plugin="%s" data-action="%s" data-nonce="%s" data-ajax-url="%s">%s</a>',
 			esc_attr( $this->config->getPluginBasename() ),
-			esc_attr( wp_create_nonce( $this->config->getPluginSlug() . '_check_updates_quick' ) ),
+			esc_attr( $action ),
+			esc_attr( wp_create_nonce( $action ) ),
+			esc_url( admin_url( 'admin-ajax.php' ) ),
 			esc_html__( 'Check for Updates', 'default' )
 		);
 

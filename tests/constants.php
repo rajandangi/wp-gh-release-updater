@@ -45,6 +45,10 @@ if (!isset($GLOBALS['wp_gh_updater_test_http_response'])) {
   $GLOBALS['wp_gh_updater_test_http_response'] = null;
 }
 
+if (!isset($GLOBALS['wp_gh_updater_test_localized_scripts']) || !is_array($GLOBALS['wp_gh_updater_test_localized_scripts'])) {
+  $GLOBALS['wp_gh_updater_test_localized_scripts'] = [];
+}
+
 // WordPress functions stubs for PHPStan
 if (!function_exists('wp_die')) {
   function wp_die(string $message = ''): void {
@@ -113,6 +117,30 @@ if (!function_exists('wp_salt')) {
 if (!function_exists('sanitize_text_field')) {
   function sanitize_text_field(string $str): string {
     return $str;
+  }
+}
+
+if (!function_exists('esc_attr')) {
+  function esc_attr(string $text): string {
+    return htmlspecialchars($text, ENT_QUOTES, 'UTF-8');
+  }
+}
+
+if (!function_exists('esc_url')) {
+  function esc_url(string $url): string {
+    return htmlspecialchars($url, ENT_QUOTES, 'UTF-8');
+  }
+}
+
+if (!function_exists('esc_html')) {
+  function esc_html(string $text): string {
+    return htmlspecialchars($text, ENT_QUOTES, 'UTF-8');
+  }
+}
+
+if (!function_exists('esc_html__')) {
+  function esc_html__(string $text, string $domain = 'default'): string {
+    return $text;
   }
 }
 
@@ -334,6 +362,12 @@ if (!function_exists('wp_enqueue_style')) {
 
 if (!function_exists('wp_localize_script')) {
   function wp_localize_script(string $handle, string $object_name, array $l10n): bool {
+    $GLOBALS['wp_gh_updater_test_localized_scripts'][] = [
+      'handle' => $handle,
+      'object_name' => $object_name,
+      'l10n' => $l10n,
+    ];
+
     return true;
   }
 }
