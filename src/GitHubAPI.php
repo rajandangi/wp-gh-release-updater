@@ -23,6 +23,11 @@ class GitHubAPI {
 	private const API_BASE_URL = 'https://api.github.com';
 
 	/**
+	 * Cache discriminator for unauthenticated GitHub API requests.
+	 */
+	private const PUBLIC_CACHE_DISCRIMINATOR = 'public';
+
+	/**
 	 * Config instance
 	 *
 	 * @var Config|null
@@ -345,9 +350,15 @@ class GitHubAPI {
 	 * @return string Cache key
 	 */
 	private function getCacheKey( $url ) {
+		$auth_discriminator = self::PUBLIC_CACHE_DISCRIMINATOR;
+		if ( ! empty( $this->access_token ) ) {
+			// Token identity separates authenticated caches without exposing raw token material.
+			$auth_discriminator = 'authed_' . hash( 'sha256', $this->access_token );
+		}
+
 		$key_parts = array(
 			$url,
-			! empty( $this->access_token ) ? 'authed' : 'public',
+			$auth_discriminator,
 		);
 
 		$hash = md5( implode( '|', $key_parts ) );
