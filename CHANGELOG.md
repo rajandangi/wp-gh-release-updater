@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-05-16
+
+### Changed
+- Removed the shared `window.pluginUpdaterConfig` plugins-page global. Quick-check data now lives on each action link's `data-*` attributes, and `event.__wpGhUpdaterHandled` prevents duplicate AJAX requests when multiple scoped copies load on the same page.
+- Upgraded PHPUnit from `^9` to `^12`.
+
+### Fixed
+- `menu_parent` config now controls admin settings placement. The hook suffix returned from the WordPress menu API is stored and used to gate settings CSS/JS and admin notices.
+
 ## [1.2.0] - 2025-10-24
 
 ### Added
@@ -30,9 +39,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Support
 
-- **Report bugs**: [GitHub Issues](https://github.com/rajandangi/wp-github-updater-manager/issues)
-- **Request features**: [GitHub Discussions](https://github.com/rajandangi/wp-github-updater-manager/discussions)
+- **Report bugs**: [GitHub Issues](https://github.com/rajandangi/wp-gh-release-updater/issues)
+- **Request features**: [GitHub Discussions](https://github.com/rajandangi/wp-gh-release-updater/discussions)
 
-[Unreleased]: https://github.com/rajandangi/wp-github-updater-manager/compare/v1.2.0...HEAD
-[1.2.0]: https://github.com/rajandangi/wp-github-updater-manager/compare/v1.0.0...v1.2.0
-[1.0.0]: https://github.com/rajandangi/wp-github-updater-manager/releases/tag/v1.0.0
+[Unreleased]: https://github.com/rajandangi/wp-gh-release-updater/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/rajandangi/wp-gh-release-updater/compare/v1.5.4...v1.6.0
+[1.2.0]: https://github.com/rajandangi/wp-gh-release-updater/compare/v1.0.0...v1.2.0
+[1.0.0]: https://github.com/rajandangi/wp-gh-release-updater/releases/tag/v1.0.0
