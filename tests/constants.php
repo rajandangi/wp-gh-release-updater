@@ -45,6 +45,14 @@ if (!isset($GLOBALS['wp_gh_updater_test_http_response'])) {
   $GLOBALS['wp_gh_updater_test_http_response'] = null;
 }
 
+if (!array_key_exists('wp_gh_updater_test_json_response', $GLOBALS)) {
+  $GLOBALS['wp_gh_updater_test_json_response'] = null;
+}
+
+if (!isset($GLOBALS['wp_gh_updater_test_error_log']) || !is_array($GLOBALS['wp_gh_updater_test_error_log'])) {
+  $GLOBALS['wp_gh_updater_test_error_log'] = [];
+}
+
 if (!isset($GLOBALS['wp_gh_updater_test_localized_scripts']) || !is_array($GLOBALS['wp_gh_updater_test_localized_scripts'])) {
   $GLOBALS['wp_gh_updater_test_localized_scripts'] = [];
 }
@@ -308,7 +316,8 @@ if (!function_exists('current_time')) {
 
 if (!function_exists('wp_send_json')) {
   function wp_send_json(mixed $response): void {
-    exit;
+    $GLOBALS['wp_gh_updater_test_json_response'] = $response;
+    throw new WPJSONTestException('wp_send_json');
   }
 }
 
@@ -514,6 +523,10 @@ if (!class_exists('WP_Error')) {
 // WP-CLI test stubs
 if (!class_exists('WPCLITestException')) {
   class WPCLITestException extends \RuntimeException {}
+}
+
+if (!class_exists('WPJSONTestException')) {
+  class WPJSONTestException extends \RuntimeException {}
 }
 
 if (!defined('WP_CLI')) {

@@ -58,3 +58,15 @@ function class_exists( string $class, bool $autoload = true ): bool {
 
 	return \class_exists( $class, $autoload );
 }
+
+/**
+ * Test-controlled error_log() override for package classes.
+ *
+ * @param string $message Log message.
+ * @return bool
+ */
+function error_log( string $message ): bool {
+	$GLOBALS['wp_gh_updater_test_error_log'][] = $message;
+
+	return true;
+}
