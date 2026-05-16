@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-05-17
+
+### Changed
+- `wp <slug> decrypt-token` now defaults to a safer debug output: `Token decrypted: N chars` plus a `Use --raw...` warning. Plaintext token output requires the explicit `--raw` flag.
+
+### Fixed
+- GitHub API cache keys now separate public requests from authenticated requests and include `sha256(token)` for authenticated requests. Switching tokens no longer reuses the previous token's cached release payload.
+- Log, CLI, and AJAX error output now redact GitHub PAT shapes (`ghp_...`, `github_pat_...`), `Authorization: token/Bearer ...` headers, and signed asset URL credentials (`X-Amz-Signature`, `X-Amz-Credential`, `sig`, `jwt`, `access_token`).
+
+### Compatibility
+- Existing encrypted access tokens remain readable. The AES-256-CBC token envelope is unchanged.
+- Existing `authed` GitHub API transients may be orphaned by the new auth discriminator, but expire harmlessly under the normal transient TTL.
+
 ## [1.6.0] - 2026-05-16
 
 ### Changed
@@ -42,7 +55,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Report bugs**: [GitHub Issues](https://github.com/rajandangi/wp-gh-release-updater/issues)
 - **Request features**: [GitHub Discussions](https://github.com/rajandangi/wp-gh-release-updater/discussions)
 
-[Unreleased]: https://github.com/rajandangi/wp-gh-release-updater/compare/v1.6.0...HEAD
+[Unreleased]: https://github.com/rajandangi/wp-gh-release-updater/compare/v1.7.0...HEAD
+[1.7.0]: https://github.com/rajandangi/wp-gh-release-updater/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/rajandangi/wp-gh-release-updater/compare/v1.5.4...v1.6.0
 [1.2.0]: https://github.com/rajandangi/wp-gh-release-updater/compare/v1.0.0...v1.2.0
 [1.0.0]: https://github.com/rajandangi/wp-gh-release-updater/releases/tag/v1.0.0
