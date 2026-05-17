@@ -138,13 +138,17 @@ class Updater {
 				$this->config->updateOption( 'latest_version', $latest_version );
 				$this->config->updateOption( 'update_available', $result['update_available'] );
 				$this->config->updateOption( 'last_checked', time() );
-				// Store release data snapshot to prevent race conditions
+				// Store release data snapshot to prevent race conditions.
+				// `is_public` captures the auth mode at fetch time so the
+				// download path does not flip if the user later clears the
+				// token between check and update.
 				$release_snapshot = array(
 					'version'      => $latest_version,
 					'tag_name'     => $release_data['tag_name'],
 					'published_at' => $release_data['published_at'] ?? '',
 					'assets'       => $release_data['assets'] ?? array(),
 					'html_url'     => $release_data['html_url'] ?? '',
+					'is_public'    => ! $github_api->hasAccessToken(),
 				);
 				$this->config->updateOption( 'release_snapshot', $release_snapshot );
 			}
@@ -493,10 +497,12 @@ class Updater {
 	 * Used by injectUpdateInfo() where we need a URL to store in the transient
 	 * but must NOT make HTTP calls (the filter runs on every admin page load).
 	 *
-	 * For public repos: returns browser_download_url (directly downloadable).
-	 * For private repos: returns the GitHub API asset URL; the actual
-	 *                    pre-signed URL is resolved just-in-time by
-	 *                    handlePreDownload() when WordPress downloads.
+	 * Auth mode is read from the release snapshot's `is_public` flag — the
+	 * value captured at fetch time — not from the current token. If the user
+	 * clears their token between check and update, the package URL still
+	 * points at the API asset URL so handlePreDownload() can surface a
+	 * `github_no_access_token` WP_Error cleanly instead of leaking a private
+	 * download attempt through WP's standard downloader.
 	 *
 	 * @param array $release_data GitHub release data (full or snapshot).
 	 * @return string Package URL or empty string.
@@ -508,15 +514,23 @@ class Updater {
 			return '';
 		}
 
-		$token = trim( (string) $this->config->getAccessToken() );
+		// Honor the auth mode captured at fetch time. Snapshots written before
+		// the `is_public` field existed fall back to the current-token check
+		// for one cycle; the next refresh repopulates the field.
+		if ( array_key_exists( 'is_public', $release_data ) ) {
+			$is_public = (bool) $release_data['is_public'];
+		} else {
+			$is_public = '' === trim( (string) $this->config->getAccessToken() );
+		}
 
-		// Public repo — browser_download_url works without auth.
-		if ( '' === $token && ! empty( $asset['browser_download_url'] ) ) {
+		if ( $is_public && ! empty( $asset['browser_download_url'] ) ) {
 			return $asset['browser_download_url'];
 		}
 
-		// Private repo — return the API URL. handlePreDownload() will
-		// resolve this to a pre-signed URL at download time.
+		// Authenticated path — return the API URL. handlePreDownload() will
+		// resolve this to a pre-signed URL at download time, or return a
+		// `github_no_access_token` WP_Error if the token was cleared since
+		// the snapshot was captured.
 		return $asset['url'] ?? '';
 	}
 
@@ -547,6 +561,13 @@ class Updater {
 	 * @return bool|string|\WP_Error Unmodified $reply, or local file path on success, or WP_Error.
 	 */
 	public function handlePreDownload( $reply, $package, $upgrader ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed
+		// Honor any decision an earlier upgrader_pre_download filter already
+		// returned (a local file path, a WP_Error, or any non-false value).
+		// Only the default `false` means "no one has handled this yet".
+		if ( false !== $reply ) {
+			return $reply;
+		}
+
 		if ( ! is_string( $package ) || '' === $package ) {
 			return $reply;
 		}
@@ -923,9 +944,19 @@ class Updater {
 			return;
 		}
 
-		// Check if our plugin was updated
+		/*
+		 * Check if our plugin was updated. WordPress passes:
+		 *   - `plugins` (array) for bulk updates triggered from Updates screen;
+		 *   - `plugin`  (string) for the single-plugin "Update now" link on
+		 *     plugins.php and the upgrader-API call path.
+		 * Accept either shape so the lock release fires on both flows.
+		 */
 		$plugin_basename = $this->config->getPluginBasename();
 		$plugins_updated = $options['plugins'] ?? array();
+
+		if ( isset( $options['plugin'] ) && is_string( $options['plugin'] ) ) {
+			$plugins_updated[] = $options['plugin'];
+		}
 
 		if ( in_array( $plugin_basename, $plugins_updated, true ) ) {
 			// Release the WP_Upgrader lock acquired in handlePreDownload.

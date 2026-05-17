@@ -121,6 +121,20 @@ class GitHubAPI {
 	}
 
 	/**
+	 * Report whether this API instance is configured with an access token.
+	 *
+	 * Used by the snapshot writer so the persisted release_snapshot records
+	 * the auth mode that was in force when the snapshot was captured, rather
+	 * than re-evaluating the token at download time (which can flip mid-cycle
+	 * if the user clears the token after a check).
+	 *
+	 * @return bool True when a non-empty token is configured.
+	 */
+	public function hasAccessToken(): bool {
+		return '' !== trim( (string) $this->access_token );
+	}
+
+	/**
 	 * Configure repository and token from repository URL input.
 	 *
 	 * Supports:

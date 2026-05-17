@@ -213,6 +213,79 @@ class UpdaterPreDownloadTest extends TestCase {
 	}
 
 	/**
+	 * P6: Single-plugin "Update now" passes $options['plugin'] (singular),
+	 * not $options['plugins']. clearCacheAfterUpdate must release the lock
+	 * for both shapes.
+	 */
+	#[Test]
+	public function clear_cache_after_update_releases_lock_for_single_plugin_key(): void {
+		$lock_name = 'wp_gh_' . $this->config->getPluginSlug() . '_update';
+		\WP_Upgrader::create_lock( $lock_name, 300 );
+		$this->assertArrayHasKey( $lock_name, WP_Upgrader::$active_locks );
+
+		$this->updater->clearCacheAfterUpdate(
+			null,
+			[
+				'action' => 'update',
+				'type'   => 'plugin',
+				'plugin' => $this->config->getPluginBasename(),
+			]
+		);
+
+		$this->assertSame( [], WP_Upgrader::$active_locks, 'lock released for single-plugin upgrade path' );
+	}
+
+	/**
+	 * Earlier upgrader_pre_download filter handled the download; our gate
+	 * must pass the non-false reply through unchanged without acquiring a
+	 * lock or touching the snapshot.
+	 */
+	#[Test]
+	public function passes_through_non_false_reply_from_earlier_filter(): void {
+		$prior_reply = '/tmp/already-handled.zip';
+
+		$result = $this->updater->handlePreDownload( $prior_reply, $this->package_url, null );
+
+		$this->assertSame( $prior_reply, $result );
+		$this->assertSame( [], WP_Upgrader::$lock_events );
+	}
+
+	/**
+	 * Snapshots captured while authenticated record `is_public => false`. If
+	 * the user later clears their token, the package URL must still resolve
+	 * to the API asset URL so handlePreDownload() surfaces
+	 * `github_no_access_token` cleanly instead of leaking a private download
+	 * through WP's standard downloader.
+	 */
+	#[Test]
+	public function authenticated_snapshot_short_circuits_when_token_is_cleared(): void {
+		$this->config->updateOption(
+			'release_snapshot',
+			[
+				'version'   => '1.1.0',
+				'tag_name'  => 'v1.1.0',
+				'is_public' => false,
+				'assets'    => [
+					[
+						'name'                 => $this->config->getAssetPrefix() . '.zip',
+						'content_type'         => 'application/zip',
+						'url'                  => $this->package_url,
+						'browser_download_url' => 'https://github.com/owner/repo/releases/download/v1.1.0/plugin.zip',
+					],
+				],
+			]
+		);
+
+		$this->assertTrue( $this->config->saveAccessToken( '' ) );
+
+		$result = $this->updater->handlePreDownload( false, $this->package_url, null );
+
+		$this->assertInstanceOf( WP_Error::class, $result );
+		$this->assertSame( 'github_no_access_token', $result->get_error_code() );
+		$this->assertSame( [], WP_Upgrader::$active_locks, 'lock released after auth error' );
+	}
+
+	/**
 	 * Stub the resolve-redirect HTTP call to point download_url() at $local_path.
 	 */
 	private function stubResolveRedirect( string $local_path ): void {
