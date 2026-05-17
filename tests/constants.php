@@ -37,6 +37,34 @@ if (!isset($GLOBALS['wp_gh_updater_test_options']) || !is_array($GLOBALS['wp_gh_
   $GLOBALS['wp_gh_updater_test_options'] = [];
 }
 
+if (!isset($GLOBALS['wp_gh_updater_test_option_autoload']) || !is_array($GLOBALS['wp_gh_updater_test_option_autoload'])) {
+  $GLOBALS['wp_gh_updater_test_option_autoload'] = [];
+}
+
+if (!isset($GLOBALS['wp_gh_updater_test_deleted_transients']) || !is_array($GLOBALS['wp_gh_updater_test_deleted_transients'])) {
+  $GLOBALS['wp_gh_updater_test_deleted_transients'] = [];
+}
+
+if (!isset($GLOBALS['wp_gh_updater_test_deleted_site_transients']) || !is_array($GLOBALS['wp_gh_updater_test_deleted_site_transients'])) {
+  $GLOBALS['wp_gh_updater_test_deleted_site_transients'] = [];
+}
+
+if (!isset($GLOBALS['wp_gh_updater_test_set_site_transients']) || !is_array($GLOBALS['wp_gh_updater_test_set_site_transients'])) {
+  $GLOBALS['wp_gh_updater_test_set_site_transients'] = [];
+}
+
+if (!array_key_exists('wp_gh_updater_test_flush_rewrite_rules_count', $GLOBALS)) {
+  $GLOBALS['wp_gh_updater_test_flush_rewrite_rules_count'] = 0;
+}
+
+if (!array_key_exists('wp_gh_updater_test_wp_upload_dir_count', $GLOBALS)) {
+  $GLOBALS['wp_gh_updater_test_wp_upload_dir_count'] = 0;
+}
+
+if (!array_key_exists('wp_gh_updater_test_wp_delete_file_count', $GLOBALS)) {
+  $GLOBALS['wp_gh_updater_test_wp_delete_file_count'] = 0;
+}
+
 if (!class_exists('WPGitHubReleaseUpdaterTestWpdb')) {
   class WPGitHubReleaseUpdaterTestWpdb {
     public string $prefix = 'wp_';
@@ -180,8 +208,9 @@ if (!function_exists('get_option')) {
 }
 
 if (!function_exists('update_option')) {
-  function update_option(string $option, mixed $value): bool {
+  function update_option(string $option, mixed $value, ?bool $autoload = null): bool {
     $GLOBALS['wp_gh_updater_test_options'][$option] = $value;
+    $GLOBALS['wp_gh_updater_test_option_autoload'][$option] = $autoload;
     return true;
   }
 }
@@ -200,6 +229,7 @@ if (!function_exists('add_option')) {
 if (!function_exists('delete_option')) {
   function delete_option(string $option): bool {
     unset($GLOBALS['wp_gh_updater_test_options'][$option]);
+    unset($GLOBALS['wp_gh_updater_test_option_autoload'][$option]);
     return true;
   }
 }
@@ -316,6 +346,11 @@ if (!function_exists('plugin_basename')) {
 
 if (!function_exists('get_plugin_data')) {
   function get_plugin_data(string $plugin_file, bool $markup = true, bool $translate = true): array {
+    $callback = $GLOBALS['wp_gh_updater_test_get_plugin_data'] ?? null;
+    if (is_callable($callback)) {
+      return $callback($plugin_file, $markup, $translate);
+    }
+
     return [
       'Name' => 'Plugin Name',
       'Version' => '1.0.0',
@@ -326,6 +361,8 @@ if (!function_exists('get_plugin_data')) {
 
 if (!function_exists('wp_upload_dir')) {
   function wp_upload_dir(): array {
+    ++$GLOBALS['wp_gh_updater_test_wp_upload_dir_count'];
+
     return [
       'path' => '/var/www/html/wp-content/uploads',
       'url' => 'https://example.com/wp-content/uploads',
@@ -337,7 +374,14 @@ if (!function_exists('wp_upload_dir')) {
 
 if (!function_exists('wp_delete_file')) {
   function wp_delete_file(string $file): bool {
+    ++$GLOBALS['wp_gh_updater_test_wp_delete_file_count'];
     return true;
+  }
+}
+
+if (!function_exists('flush_rewrite_rules')) {
+  function flush_rewrite_rules(bool $hard = true): void {
+    ++$GLOBALS['wp_gh_updater_test_flush_rewrite_rules_count'];
   }
 }
 
@@ -415,6 +459,7 @@ if (!function_exists('set_transient')) {
 
 if (!function_exists('delete_transient')) {
   function delete_transient(string $transient): bool {
+    $GLOBALS['wp_gh_updater_test_deleted_transients'][] = $transient;
     unset($GLOBALS['wp_gh_updater_test_transients'][$transient]);
     return true;
   }
@@ -437,6 +482,11 @@ if (!function_exists('apply_filters')) {
 
 if (!function_exists('set_site_transient')) {
   function set_site_transient(string $transient, mixed $value, int $expiration = 0): bool {
+    $GLOBALS['wp_gh_updater_test_set_site_transients'][] = [
+      'transient' => $transient,
+      'value' => $value,
+      'expiration' => $expiration,
+    ];
     return true;
   }
 }
@@ -449,6 +499,7 @@ if (!function_exists('get_site_transient')) {
 
 if (!function_exists('delete_site_transient')) {
   function delete_site_transient(string $transient): bool {
+    $GLOBALS['wp_gh_updater_test_deleted_site_transients'][] = $transient;
     return true;
   }
 }

@@ -393,41 +393,19 @@ class Config {
 	 * @return array Plugin data
 	 */
 	private function extractPluginData( $plugin_file ): array {
-		// Get default plugin data
-		if ( function_exists( 'get_plugin_data' ) ) {
-			$plugin_data = get_plugin_data( $plugin_file, false, false );
-		} else {
-			// Fallback: parse headers manually
-			$plugin_data = $this->parsePluginHeaders( $plugin_file );
+		// Load WordPress' canonical plugin header parser when this package
+		// is booted in WP-CLI, where admin includes may not be loaded yet.
+		if ( ! function_exists( 'get_plugin_data' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/plugin.php';
 		}
+
+		$plugin_data = get_plugin_data( $plugin_file, false, false );
 
 		// Extract slug from file name or sanitize plugin name
 		$file_name = basename( $plugin_file, '.php' );
 		$slug      = sanitize_title( $file_name );
 
 		return ['name'        => $plugin_data['Name'] ?? 'Unknown Plugin', 'version'     => $plugin_data['Version'] ?? '1.0.0', 'text_domain' => $plugin_data['TextDomain'] ?? $slug, 'slug'        => $slug];
-	}
-
-	/**
-	 * Parse plugin headers manually (fallback)
-	 *
-	 * @param string $plugin_file Plugin file path
-	 * @return array Headers
-	 */
-	private function parsePluginHeaders( $plugin_file ): array {
-		$headers = ['Name'       => 'Plugin Name', 'Version'    => 'Version', 'TextDomain' => 'Text Domain'];
-
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents -- Reading local plugin file headers, not remote URL
-		$file_data   = file_get_contents( $plugin_file, false, null, 0, 8192 );
-		$plugin_data = [];
-
-		foreach ( $headers as $key => $value ) {
-			if ( preg_match( '/^[ \t\/*#@]*' . preg_quote( $value, '/' ) . ':(.*)$/mi', $file_data, $match ) && $match[1] ) {
-				$plugin_data[ $key ] = trim( (string) preg_replace( '/\s*(?:\*\/|\?>).*/', '', $match[1] ) );
-			}
-		}
-
-		return $plugin_data;
 	}
 
 	/**

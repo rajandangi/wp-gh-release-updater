@@ -921,13 +921,7 @@ class Updater {
 		$this->config->updateOption( 'release_snapshot', array() );
 
 		// Clear WordPress plugin update transient
-		$plugin_basename = $this->config->getPluginBasename();
-		$transient       = get_site_transient( 'update_plugins' );
-
-		if ( is_object( $transient ) && isset( $transient->response[ $plugin_basename ] ) ) {
-			unset( $transient->response[ $plugin_basename ] );
-			set_site_transient( 'update_plugins', $transient );
-		}
+		delete_site_transient( 'update_plugins' );
 	}
 
 	/**
