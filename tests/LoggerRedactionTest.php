@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace WPGitHubReleaseUpdater\Tests;
 
 use PHPUnit\Framework\TestCase;
+use WPGitHubReleaseUpdater\Config;
 use WPGitHubReleaseUpdater\Logger;
 
 /**
@@ -108,5 +109,43 @@ class LoggerRedactionTest extends TestCase {
 		$message = 'GitHub repository or release not found. status=404 request_id=ABC123';
 
 		$this->assertSame( $message, Logger::redact( $message ) );
+	}
+
+	/**
+	 * String callers route through Logger::redact() and append context bracket.
+	 */
+	public function test_string_message_callers_unchanged(): void {
+		$config = $this->makeConfig();
+		$GLOBALS['wp_gh_updater_test_error_log'] = [];
+
+		Logger::log( $config, 'ERROR', 'Updater', 'plain failure message', [ 'action' => 'Check' ] );
+
+		$line = $GLOBALS['wp_gh_updater_test_error_log'][0];
+		$this->assertStringContainsString( 'plain failure message', $line );
+		$this->assertStringContainsString( '[action=Check]', $line );
+	}
+
+	/**
+	 * Build a Config instance for log-emission tests.
+	 */
+	private function makeConfig(): Config {
+		Config::clearAllInstances();
+
+		$plugin_dir  = sys_get_temp_dir() . '/wp-gh-logger-test-' . uniqid( '', true );
+		$plugin_file = $plugin_dir . '/logger-test-plugin.php';
+		mkdir( $plugin_dir );
+		file_put_contents(
+			$plugin_file,
+			"<?php\n/*\nPlugin Name: Logger Test Plugin\nVersion: 1.0.0\n*/\n"
+		);
+
+		return Config::getInstance(
+			$plugin_file,
+			[
+				'menu_title'  => 'Logger Test',
+				'page_title'  => 'Logger Test',
+				'cli_command' => 'logger-test',
+			]
+		);
 	}
 }

@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-05-17
+
+### Added
+- Concurrent update lock via `WP_Upgrader::create_lock()` around `handlePreDownload()`. Two simultaneous "Update now" clicks (or admin + cron) previously raced on file replacement; the second caller now returns `WP_Error( 'update_in_progress' )` cleanly. The lock spans the full update window — acquired before download, held through extraction, released by `clearCacheAfterUpdate()` on success. WP core's 5-minute TTL covers crash-mid-update.
+
+### Changed
+- WordPress minimum bumped to **6.9**. The package now inherits `WP_Upgrader::install_package()` automatic rollback (added 6.3, hardened through 6.9): if an update fails after extraction, WP restores the previous plugin from `wp-content/upgrade-temp-backup/plugins/{slug}/`. Consumer plugins should declare `Requires at least: 6.9` in their plugin headers so older sites block activation cleanly.
+- Collapsed the asset-resolution pipeline in `Updater`: `resolveAssetDownloadUrl()` is inlined into `findDownloadAsset()`, saving 27 lines in `src/Updater.php`. No behavioural change — all existing tests pass without edits.
+
+### Compatibility
+- All public surface (`GitHubUpdaterManager`, `Config`, `GitHubAPI`, `Updater`, `Admin`, `CLI`, `Logger`) preserved.
+- Existing encrypted access tokens remain readable. Cache key format unchanged.
+
 ## [1.7.0] - 2026-05-17
 
 ### Changed
@@ -55,7 +68,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Report bugs**: [GitHub Issues](https://github.com/rajandangi/wp-gh-release-updater/issues)
 - **Request features**: [GitHub Discussions](https://github.com/rajandangi/wp-gh-release-updater/discussions)
 
-[Unreleased]: https://github.com/rajandangi/wp-gh-release-updater/compare/v1.7.0...HEAD
+[Unreleased]: https://github.com/rajandangi/wp-gh-release-updater/compare/v1.8.0...HEAD
+[1.8.0]: https://github.com/rajandangi/wp-gh-release-updater/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/rajandangi/wp-gh-release-updater/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/rajandangi/wp-gh-release-updater/compare/v1.5.4...v1.6.0
 [1.2.0]: https://github.com/rajandangi/wp-gh-release-updater/compare/v1.0.0...v1.2.0

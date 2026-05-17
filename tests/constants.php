@@ -29,12 +29,39 @@ if (!defined('NONCE_KEY')) {
   define('NONCE_KEY', 'test-nonce-key');
 }
 
+if (!defined('MINUTE_IN_SECONDS')) {
+  define('MINUTE_IN_SECONDS', 60);
+}
+
 if (!isset($GLOBALS['wp_gh_updater_test_options']) || !is_array($GLOBALS['wp_gh_updater_test_options'])) {
   $GLOBALS['wp_gh_updater_test_options'] = [];
 }
 
-if (!isset($GLOBALS['wpdb']) || !is_object($GLOBALS['wpdb'])) {
-  $GLOBALS['wpdb'] = (object) ['prefix' => 'wp_'];
+if (!class_exists('WPGitHubReleaseUpdaterTestWpdb')) {
+  class WPGitHubReleaseUpdaterTestWpdb {
+    public string $prefix = 'wp_';
+    public string $options = 'wp_options';
+
+    public function prepare(string $query, mixed ...$args): string {
+      return $query;
+    }
+
+    public function query(string $query): int {
+      return 0;
+    }
+
+    public function get_var(string $query): ?string {
+      return '0';
+    }
+
+    public function esc_like(string $text): string {
+      return addcslashes($text, '_%\\');
+    }
+  }
+}
+
+if (!isset($GLOBALS['wpdb']) || !$GLOBALS['wpdb'] instanceof WPGitHubReleaseUpdaterTestWpdb) {
+  $GLOBALS['wpdb'] = new WPGitHubReleaseUpdaterTestWpdb();
 }
 
 if (!isset($GLOBALS['wp_gh_updater_test_transients']) || !is_array($GLOBALS['wp_gh_updater_test_transients'])) {
@@ -209,6 +236,12 @@ if (!function_exists('esc_html')) {
 
 if (!function_exists('esc_html__')) {
   function esc_html__(string $text, string $domain = 'default'): string {
+    return $text;
+  }
+}
+
+if (!function_exists('__')) {
+  function __(string $text, string $domain = 'default'): string {
     return $text;
   }
 }
@@ -499,6 +532,43 @@ if (!function_exists('get_current_screen')) {
   }
 }
 
+if (!function_exists('remove_filter')) {
+  function remove_filter(string $hook, callable $callback, int $priority = 10): bool {
+    return true;
+  }
+}
+
+if (!function_exists('download_url')) {
+  function download_url(string $url, int $timeout = 300): string|WP_Error {
+    $callback = $GLOBALS['wp_gh_updater_test_download_url'] ?? null;
+    if (is_callable($callback)) {
+      return $callback($url, $timeout);
+    }
+
+    if ($callback instanceof WP_Error) {
+      return $callback;
+    }
+
+    if (is_string($callback)) {
+      return $callback;
+    }
+
+    $tmp = tempnam(sys_get_temp_dir(), 'wp_gh_test_');
+    if (false === $tmp) {
+      return new WP_Error('download_failed', 'tempnam failed');
+    }
+    file_put_contents($tmp, 'stub');
+    return $tmp;
+  }
+}
+
+if (!function_exists('wp_tempnam')) {
+  function wp_tempnam(string $prefix = ''): string {
+    $tmp = tempnam(sys_get_temp_dir(), $prefix);
+    return false !== $tmp ? $tmp : sys_get_temp_dir() . '/' . $prefix . uniqid('', true);
+  }
+}
+
 // WordPress classes
 if (!class_exists('WP_Error')) {
   class WP_Error {
@@ -523,6 +593,46 @@ if (!class_exists('WP_Error')) {
 // WP-CLI test stubs
 if (!class_exists('WPCLITestException')) {
   class WPCLITestException extends \RuntimeException {}
+}
+
+if (!class_exists('WP_Upgrader')) {
+  class WP_Upgrader {
+    /** @var array<string, true> */
+    public static array $active_locks = [];
+
+    /** @var array<int, array{event: string, name: string}> */
+    public static array $lock_events = [];
+
+    /** @var bool */
+    public static bool $force_lock_failure = false;
+
+    public static function create_lock(string $lock_name, int $release_timeout = 0): bool {
+      self::$lock_events[] = ['event' => 'create', 'name' => $lock_name];
+
+      if (self::$force_lock_failure) {
+        return false;
+      }
+
+      if (isset(self::$active_locks[$lock_name])) {
+        return false;
+      }
+
+      self::$active_locks[$lock_name] = true;
+      return true;
+    }
+
+    public static function release_lock(string $lock_name): bool {
+      self::$lock_events[] = ['event' => 'release', 'name' => $lock_name];
+      unset(self::$active_locks[$lock_name]);
+      return true;
+    }
+
+    public static function reset(): void {
+      self::$active_locks = [];
+      self::$lock_events = [];
+      self::$force_lock_failure = false;
+    }
+  }
 }
 
 if (!class_exists('WPJSONTestException')) {
