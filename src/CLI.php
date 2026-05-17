@@ -111,7 +111,7 @@ class CLI {
 		$test_result = $test_api->testRepositoryAccess();
 
 		if ( is_wp_error( $test_result ) ) {
-			$this->wpCliCall( 'error', [$test_result->get_error_message()] );
+			$this->wpCliCall( 'error', [Logger::redact( $test_result->get_error_message() )] );
 		}
 
 		$this->wpCliCall( 'success', ['Repository access successful!'] );
@@ -129,14 +129,14 @@ class CLI {
 		}
 
 		if ( ! $readiness['success'] ) {
-			$this->wpCliCall( 'error', [$readiness['message']] );
+			$this->wpCliCall( 'error', [Logger::redact( $readiness['message'] )] );
 		}
 
 		if ( ! empty( $readiness['download_url'] ) ) {
-			$this->wpCliCall( 'log', [sprintf( 'Download URL: %s', $readiness['download_url'] )] );
+			$this->wpCliCall( 'log', [sprintf( 'Download URL: %s', Logger::redact( $readiness['download_url'] ) )] );
 		}
 
-		$this->wpCliCall( 'success', [$readiness['message']] );
+		$this->wpCliCall( 'success', [Logger::redact( $readiness['message'] )] );
 	}
 
 	/**
@@ -161,7 +161,7 @@ class CLI {
 		$result = $this->updater->checkForUpdatesFresh();
 
 		if ( ! $result['success'] ) {
-			$this->wpCliCall( 'error', [$result['message']] );
+			$this->wpCliCall( 'error', [Logger::redact( $result['message'] )] );
 		}
 
 		$this->wpCliCall( 'log', [sprintf( 'Current version: %s', $result['current_version'] )] );
@@ -171,7 +171,7 @@ class CLI {
 		}
 
 		if ( $result['update_available'] ) {
-			$this->wpCliCall( 'success', [$result['message']] );
+			$this->wpCliCall( 'success', [Logger::redact( $result['message'] )] );
 			return;
 		}
 
@@ -204,7 +204,7 @@ class CLI {
 		$readiness = $this->updater->validateUpdateReadiness();
 
 		if ( ! $readiness['success'] ) {
-			$this->wpCliCall( 'error', [$readiness['message']] );
+			$this->wpCliCall( 'error', [Logger::redact( $readiness['message'] )] );
 		}
 
 		if ( ! $readiness['update_available'] ) {
@@ -216,18 +216,22 @@ class CLI {
 		if ( $dry_run ) {
 			$this->wpCliCall( 'log', [sprintf( 'Current version: %s', $readiness['current_version'] )] );
 			$this->wpCliCall( 'log', [sprintf( 'Latest version: %s', $readiness['latest_version'] )] );
-			$this->wpCliCall( 'log', [sprintf( 'Download URL: %s', $readiness['download_url'] )] );
+			$this->wpCliCall( 'log', [sprintf( 'Download URL: %s', Logger::redact( $readiness['download_url'] ) )] );
 			$this->wpCliCall( 'success', ['Dry run completed. Update pipeline validated successfully.'] );
 			return;
 		}
 
 		// Proceed with the actual update.
 		$plugin_basename = $this->config->getPluginBasename();
-		$command         = 'plugin update ' . $plugin_basename;
+		$command         = 'plugin update ' . escapeshellarg( $plugin_basename );
 
+		// Run the WordPress plugin updater in a separate WP-CLI process.
+		// Updating the plugin that owns the current command inside the same
+		// PHP process can leave the parent command holding stale loaded code
+		// and updater state after the files have been replaced.
 		$command_result = $this->wpCliCall(
 			'runcommand',
-			[$command, ['return'     => 'all', 'launch'     => false, 'exit_error' => false]]
+			[$command, ['return'     => 'all', 'launch'     => true, 'exit_error' => false]]
 		);
 
 		if ( ! is_object( $command_result ) ) {
@@ -239,11 +243,11 @@ class CLI {
 		$stderr = trim( (string) $command_result->stderr );
 
 		if ( 0 !== (int) $command_result->return_code ) {
-			$this->wpCliCall( 'error', ['' !== $stderr ? $stderr : ( '' !== $stdout ? $stdout : 'Plugin update command failed.' )] );
+			$this->wpCliCall( 'error', [Logger::redact( '' !== $stderr ? $stderr : ( '' !== $stdout ? $stdout : 'Plugin update command failed.' ) )] );
 		}
 
 		if ( '' !== $stdout ) {
-			$this->wpCliCall( 'log', [$stdout] );
+			$this->wpCliCall( 'log', [Logger::redact( $stdout )] );
 		}
 
 		$this->wpCliCall( 'success', ['Plugin update completed.'] );
@@ -252,13 +256,13 @@ class CLI {
 	/**
 	 * Decrypt and print the currently stored access token.
 	 *
-	 * Use this command for debugging when you need to verify the saved token.
-	 * Output is sensitive.
+	 * Use this command for debugging when you need to verify the saved token
+	 * can still be decrypted. By default, output shows only the token length.
 	 *
 	 * ## OPTIONS
 	 *
 	 * [--raw]
-	 * : Print only the decrypted token value.
+	 * : Print only the plaintext token value. Output is sensitive.
 	 *
 	 * ## EXAMPLES
 	 *
@@ -290,9 +294,8 @@ class CLI {
 			return;
 		}
 
-		$this->wpCliCall( 'warning', ['Displaying decrypted access token. Treat this output as sensitive.'] );
-		$this->wpCliCall( 'log', [sprintf( 'Token (masked): %s', $this->maskToken( $decrypted_token ) )] );
-		$this->wpCliCall( 'log', [sprintf( 'Token (decrypted): %s', $decrypted_token )] );
+		$this->wpCliCall( 'warning', ['Use --raw to print the plaintext token.'] );
+		$this->wpCliCall( 'log', [sprintf( 'Token decrypted: %d chars', strlen( $decrypted_token ) )] );
 		$this->wpCliCall( 'success', ['Access token decrypted.'] );
 	}
 
@@ -324,21 +327,6 @@ class CLI {
 		}
 
 		return trim( (string) $access_token );
-	}
-
-	/**
-  * Mask token for safer display.
-  *
-  * @param string $token Raw token value.
-  */
- private function maskToken( string $token ): string {
-		$length = strlen( $token );
-
-		if ( $length <= 8 ) {
-			return str_repeat( '*', $length );
-		}
-
-		return substr( $token, 0, 4 ) . str_repeat( '*', $length - 8 ) . substr( $token, -4 );
 	}
 
 	/**

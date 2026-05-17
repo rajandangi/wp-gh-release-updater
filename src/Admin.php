@@ -19,6 +19,11 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Admin {
 
 	/**
+	 * Settings page hook suffix returned by WordPress.
+	 */
+	private ?string $settings_hook = null;
+
+	/**
 	 * Constructor
 	 *
 	 * @param Config    $config Configuration instance.
@@ -61,13 +66,28 @@ class Admin {
 	 * Add admin menu page
 	 */
 	public function addAdminMenu(): void {
-		add_management_page(
-			$this->config->getPageTitle(),
-			$this->config->getMenuTitle(),
-			$this->config->getCapability(),
-			$this->config->getSettingsPageSlug(),
-			$this->displaySettingsPage(...)
-		);
+		$menu_parent = $this->config->getMenuParent();
+
+		if ( 'tools.php' === $menu_parent ) {
+			$settings_hook = add_management_page(
+				$this->config->getPageTitle(),
+				$this->config->getMenuTitle(),
+				$this->config->getCapability(),
+				$this->config->getSettingsPageSlug(),
+				$this->displaySettingsPage(...)
+			);
+		} else {
+			$settings_hook = add_submenu_page(
+				$menu_parent,
+				$this->config->getPageTitle(),
+				$this->config->getMenuTitle(),
+				$this->config->getCapability(),
+				$this->config->getSettingsPageSlug(),
+				$this->displaySettingsPage(...)
+			);
+		}
+
+		$this->settings_hook = is_string( $settings_hook ) ? $settings_hook : null;
 	}
 
 	/**
@@ -129,21 +149,11 @@ class Admin {
 				$this->config->getPluginVersion(),
 				true
 			);
-
-			// Pass plugin slug to JavaScript
-			wp_localize_script(
-				$script_handle,
-				'pluginUpdaterConfig',
-				['slug' => $this->config->getPluginSlug()]
-			);
 			return;
 		}
 
 		// Enqueue settings page scripts
-		$menu_parent_prefix = str_replace( '.php', '', $this->config->getMenuParent() );
-		$expected_hook      = $menu_parent_prefix . '_page_' . $this->config->getSettingsPageSlug();
-
-		if ( $hook !== $expected_hook ) {
+		if ( null === $this->settings_hook || $hook !== $this->settings_hook ) {
 			return;
 		}
 
@@ -317,7 +327,7 @@ class Admin {
 
 		if ( is_wp_error( $test_result ) ) {
 			wp_send_json(
-				['success' => false, 'message' => $test_result->get_error_message()]
+				['success' => false, 'message' => Logger::redact( $test_result->get_error_message() )]
 			);
 		} else {
 			wp_send_json(
@@ -332,11 +342,7 @@ class Admin {
 	public function showAdminNotices(): void {
 		$screen = get_current_screen();
 
-		// Determine the menu parent prefix for the page hook
-		$menu_parent_prefix = str_replace( '.php', '', $this->config->getMenuParent() );
-		$expected_screen_id = $menu_parent_prefix . '_page_' . $this->config->getSettingsPageSlug();
-
-		if ( $screen->id !== $expected_screen_id ) {
+		if ( null === $this->settings_hook || null === $screen || $screen->id !== $this->settings_hook ) {
 			return;
 		}
 
@@ -365,11 +371,14 @@ class Admin {
 	 * @return array Modified links
 	 */
 	public function addPluginActionLinks( $links ): array {
+		$action = $this->config->getPluginSlug() . '_check_updates_quick';
+
 		$check_updates_link = sprintf(
-			'<a href="#" class="%s-check-updates" data-plugin="%s" data-nonce="%s">%s</a>',
-			esc_attr( $this->config->getPluginSlug() ),
+			'<a href="#" data-wp-gh-release-updater-check="1" data-plugin="%s" data-action="%s" data-nonce="%s" data-ajax-url="%s">%s</a>',
 			esc_attr( $this->config->getPluginBasename() ),
-			esc_attr( wp_create_nonce( $this->config->getPluginSlug() . '_check_updates_quick' ) ),
+			esc_attr( $action ),
+			esc_attr( wp_create_nonce( $action ) ),
+			esc_url( admin_url( 'admin-ajax.php' ) ),
 			esc_html__( 'Check for Updates', 'default' )
 		);
 
@@ -413,7 +422,7 @@ class Admin {
 				['message' => $result['message']]
 			);
 
-			wp_send_json_error( ['message' => $result['message']] );
+			wp_send_json_error( ['message' => Logger::redact( $result['message'] )] );
 		}
 	}
 }

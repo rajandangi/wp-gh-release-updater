@@ -9,12 +9,16 @@
 .distignore
 
 # Development files
+AGENTS.md
+CLAUDE.md
 tests/
 node_modules/
 *.zip
 *.tar.gz
 
 # Code quality tools
+.phpunit.result.cache
+phpunit.xml
 .phpcs.cache
 .phpcs-cache
 phpcs.xml
@@ -34,5 +38,9 @@ biome.json
 Thumbs.db
 
 # Package management
+composer.lock
 package.json
 package-lock.json
+
+# Build/release metadata
+VERSION

@@ -41,9 +41,10 @@ class CLITest extends TestCase {
 	protected function setUp(): void {
 		parent::setUp();
 
-		$GLOBALS['wp_gh_updater_test_options']    = [];
-		$GLOBALS['wp_gh_updater_test_transients'] = [];
+		$GLOBALS['wp_gh_updater_test_options']       = [];
+		$GLOBALS['wp_gh_updater_test_transients']    = [];
 		$GLOBALS['wp_gh_updater_test_http_response'] = null;
+		$GLOBALS['wp_gh_updater_test_error_log']     = [];
 		Config::clearAllInstances();
 		\WP_CLI::reset();
 
@@ -69,9 +70,10 @@ class CLITest extends TestCase {
 	protected function tearDown(): void {
 		Config::clearAllInstances();
 		\WP_CLI::reset();
-		$GLOBALS['wp_gh_updater_test_options']    = [];
-		$GLOBALS['wp_gh_updater_test_transients'] = [];
+		$GLOBALS['wp_gh_updater_test_options']       = [];
+		$GLOBALS['wp_gh_updater_test_transients']    = [];
 		$GLOBALS['wp_gh_updater_test_http_response'] = null;
+		$GLOBALS['wp_gh_updater_test_error_log']     = [];
 
 		if ( is_file( $this->plugin_file ) ) {
 			unlink( $this->plugin_file );
@@ -91,7 +93,7 @@ class CLITest extends TestCase {
 	 */
 	private function makeCli( ?array $readiness_result = null, ?array $check_updates_result = null ): CLI {
 		if ( null !== $readiness_result || null !== $check_updates_result ) {
-			$updater = $this->createMock( Updater::class );
+			$updater = $this->createStub( Updater::class );
 			if ( null !== $readiness_result ) {
 				$updater->method( 'validateUpdateReadiness' )->willReturn( $readiness_result );
 			}
@@ -176,7 +178,7 @@ class CLITest extends TestCase {
 			'current_version'  => '2.0.0',
 			'latest_version'   => '3.0.0',
 			'update_available' => true,
-			'download_url'     => 'https://objects.githubusercontent.com/package.zip?token=abc',
+			'download_url'     => 'https://objects.githubusercontent.com/package.zip?X-Amz-Credential=AKIA_TEST%2F20260516%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Signature=abcdef1234567890',
 			'message'          => 'Update available: 2.0.0 → 3.0.0. Download URL resolved successfully.',
 		];
 
@@ -314,6 +316,32 @@ class CLITest extends TestCase {
 
 		$errors = $this->capturedMessages( 'error' );
 		$this->assertNotEmpty( $errors );
+		$this->assertStringContainsString( 'GitHub repository or release not found', implode( "\n", $GLOBALS['wp_gh_updater_test_error_log'] ) );
+	}
+
+	/**
+	 * test-repo redacts transport error details before printing to WP-CLI.
+	 */
+	public function test_test_repo_redacts_transport_error_message(): void {
+		$token      = 'ghp_transport_error_token_1234567890';
+		$signed_url = 'https://objects.githubusercontent.com/package.zip?X-Amz-Credential=AKIA_TEST%2F20260516%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Signature=abcdef1234567890';
+
+		$GLOBALS['wp_gh_updater_test_http_response'] = new \WP_Error(
+			'http_request_failed',
+			'Failed with Authorization: token ' . $token . ' for ' . $signed_url
+		);
+
+		$cli = $this->makeCli();
+
+		try {
+			$cli->test_repo( [], [ 'repository-url' => 'owner/repo' ] );
+			$this->fail( 'Expected WPCLITestException to be thrown.' );
+		} catch ( \WPCLITestException $exception ) {
+			$this->assertStringContainsString( 'Authorization: token ***', $exception->getMessage() );
+			$this->assertStringContainsString( 'X-Amz-Credential=***', $exception->getMessage() );
+			$this->assertStringNotContainsString( $token, $exception->getMessage() );
+			$this->assertStringNotContainsString( 'AKIA_TEST', $exception->getMessage() );
+		}
 	}
 
 	// ── test-repo pipeline validation ───────────────────────────────
@@ -384,7 +412,8 @@ class CLITest extends TestCase {
 			[ 'id' => 123, 'full_name' => 'owner/repo' ]
 		);
 
-		$download_url = 'https://objects.githubusercontent.com/package.zip?token=abc';
+		$download_url = 'https://objects.githubusercontent.com/package.zip?X-Amz-Credential=AKIA_TEST%2F20260516%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Signature=abcdef1234567890';
+		$redacted_url = 'https://objects.githubusercontent.com/package.zip?X-Amz-Credential=***&X-Amz-Signature=***';
 		$readiness = [
 			'success'          => true,
 			'current_version'  => '2.0.0',
@@ -398,14 +427,11 @@ class CLITest extends TestCase {
 		$cli->test_repo( [], [ 'repository-url' => 'owner/repo' ] );
 
 		$logs = $this->capturedMessages( 'log' );
-		$found_download = false;
-		foreach ( $logs as $log ) {
-			if ( str_contains( $log, $download_url ) ) {
-				$found_download = true;
-				break;
-			}
-		}
-		$this->assertTrue( $found_download, 'Expected download URL in log output.' );
+		$log_text = implode( "\n", $logs );
+
+		$this->assertStringContainsString( $redacted_url, $log_text );
+		$this->assertStringNotContainsString( $download_url, $log_text );
+		$this->assertStringNotContainsString( 'AKIA_TEST', $log_text );
 	}
 
 	// ── update ──────────────────────────────────────────────────────
@@ -462,19 +488,24 @@ class CLITest extends TestCase {
 	 * check-updates propagates updater failure as WP_CLI::error().
 	 */
 	public function test_check_updates_errors_on_updater_failure(): void {
+		$token = 'ghp_check_updates_error_token_1234567890';
 		$cli = $this->makeCli( null, [
 			'success'          => false,
 			'current_version'  => '2.0.0',
 			'latest_version'   => '',
 			'update_available' => false,
-			'message'          => 'GitHub API rate limit exceeded.',
+			'message'          => 'GitHub API rate limit exceeded. Authorization: Bearer ' . $token,
 			'release_data'     => null,
 		] );
 
-		$this->expectException( \WPCLITestException::class );
-		$this->expectExceptionMessage( 'rate limit' );
-
-		$cli->check_updates( [], [] );
+		try {
+			$cli->check_updates( [], [] );
+			$this->fail( 'Expected WPCLITestException to be thrown.' );
+		} catch ( \WPCLITestException $exception ) {
+			$this->assertStringContainsString( 'rate limit', $exception->getMessage() );
+			$this->assertStringContainsString( 'Authorization: Bearer ***', $exception->getMessage() );
+			$this->assertStringNotContainsString( $token, $exception->getMessage() );
+		}
 	}
 
 	/**
@@ -561,7 +592,11 @@ class CLITest extends TestCase {
 		$runcommands = $this->capturedMessages( 'runcommand' );
 		$this->assertNotEmpty( $runcommands );
 		$this->assertStringContainsString( 'plugin update', $runcommands[0] );
+		$this->assertStringContainsString( escapeshellarg( $this->config->getPluginBasename() ), $runcommands[0] );
 		$this->assertStringNotContainsString( '--dry-run', $runcommands[0] );
+		$this->assertSame( 'all', \WP_CLI::$runcommand_options['return'] );
+		$this->assertTrue( \WP_CLI::$runcommand_options['launch'] );
+		$this->assertFalse( \WP_CLI::$runcommand_options['exit_error'] );
 
 		// Verify success message.
 		$successes = $this->capturedMessages( 'success' );
@@ -573,12 +608,13 @@ class CLITest extends TestCase {
 	 * update --dry reports validated pipeline info without calling runcommand.
 	 */
 	public function test_update_dry_run_reports_pipeline_info(): void {
+		$signed_url = 'https://release-assets.githubusercontent.com/github-production-release-asset/12345/plugin.zip?sp=r&sv=2018-11-09&sig=abcdef1234567890%3D&jwt=header.payload.signature&response-content-disposition=attachment%3B%20filename%3Dplugin.zip';
 		$cli = $this->makeCli( [
 			'success'          => true,
 			'current_version'  => '2.0.0',
 			'latest_version'   => '3.0.0',
 			'update_available' => true,
-			'download_url'     => 'https://objects.githubusercontent.com/package.zip?token=abc',
+			'download_url'     => $signed_url,
 			'message'          => 'Update available: 2.0.0 → 3.0.0. Download URL resolved successfully.',
 		] );
 
@@ -596,6 +632,10 @@ class CLITest extends TestCase {
 		$this->assertStringContainsString( '2.0.0', $log_text );
 		$this->assertStringContainsString( '3.0.0', $log_text );
 		$this->assertStringContainsString( 'Download URL', $log_text );
+		$this->assertStringContainsString( 'sig=***', $log_text );
+		$this->assertStringContainsString( 'jwt=***', $log_text );
+		$this->assertStringNotContainsString( 'abcdef1234567890', $log_text );
+		$this->assertStringNotContainsString( 'header.payload.signature', $log_text );
 
 		$successes = $this->capturedMessages( 'success' );
 		$this->assertNotEmpty( $successes );
@@ -606,9 +646,10 @@ class CLITest extends TestCase {
 	 * update errors when runcommand returns a non-zero exit code.
 	 */
 	public function test_update_errors_on_failed_runcommand(): void {
+		$signed_url = 'https://objects.githubusercontent.com/package.zip?X-Amz-Credential=AKIA_TEST%2F20260516%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Signature=abcdef1234567890';
 		\WP_CLI::$runcommand_result = (object) [
 			'stdout'      => '',
-			'stderr'      => 'Error: Could not download update package.',
+			'stderr'      => 'Error: Could not download update package from ' . $signed_url,
 			'return_code' => 1,
 		];
 
@@ -621,10 +662,15 @@ class CLITest extends TestCase {
 			'message'          => 'Update available: 2.0.0 → 3.0.0. Download URL resolved successfully.',
 		] );
 
-		$this->expectException( \WPCLITestException::class );
-		$this->expectExceptionMessage( 'Could not download update package' );
-
-		$cli->update( [], [] );
+		try {
+			$cli->update( [], [] );
+			$this->fail( 'Expected WPCLITestException to be thrown.' );
+		} catch ( \WPCLITestException $exception ) {
+			$this->assertStringContainsString( 'Could not download update package', $exception->getMessage() );
+			$this->assertStringContainsString( 'X-Amz-Credential=***', $exception->getMessage() );
+			$this->assertStringContainsString( 'X-Amz-Signature=***', $exception->getMessage() );
+			$this->assertStringNotContainsString( 'AKIA_TEST', $exception->getMessage() );
+		}
 	}
 
 	/**
@@ -652,19 +698,24 @@ class CLITest extends TestCase {
 	 * update errors when updater check itself fails.
 	 */
 	public function test_update_errors_on_updater_failure(): void {
+		$token = 'ghp_update_failure_token_1234567890';
 		$cli = $this->makeCli( [
 			'success'          => false,
 			'current_version'  => '2.0.0',
 			'latest_version'   => '',
 			'update_available' => false,
 			'download_url'     => '',
-			'message'          => 'Repository owner and name must be configured',
+			'message'          => 'Repository owner and name must be configured. Authorization: token ' . $token,
 		] );
 
-		$this->expectException( \WPCLITestException::class );
-		$this->expectExceptionMessage( 'Repository owner and name must be configured' );
-
-		$cli->update( [], [] );
+		try {
+			$cli->update( [], [] );
+			$this->fail( 'Expected WPCLITestException to be thrown.' );
+		} catch ( \WPCLITestException $exception ) {
+			$this->assertStringContainsString( 'Repository owner and name must be configured', $exception->getMessage() );
+			$this->assertStringContainsString( 'Authorization: token ***', $exception->getMessage() );
+			$this->assertStringNotContainsString( $token, $exception->getMessage() );
+		}
 	}
 
 	// ── decrypt-token ───────────────────────────────────────────────
@@ -696,9 +747,9 @@ class CLITest extends TestCase {
 	}
 
 	/**
-	 * decrypt-token prints warning, masked token, and decrypted token.
+	 * decrypt-token prints token length by default without plaintext.
 	 */
-	public function test_decrypt_token_outputs_warning_masked_and_raw_token(): void {
+	public function test_decrypt_token_outputs_warning_and_token_length_by_default(): void {
 		$token = 'ghp_test_token_1234567890';
 		$this->config->saveAccessToken( $token );
 
@@ -710,12 +761,11 @@ class CLITest extends TestCase {
 		$successes = $this->capturedMessages( 'success' );
 
 		$this->assertNotEmpty( $warnings );
-		$this->assertStringContainsString( 'Displaying decrypted access token', $warnings[0] );
+		$this->assertSame( 'Use --raw to print the plaintext token.', $warnings[0] );
 
-		$this->assertCount( 2, $logs );
-		$this->assertStringContainsString( 'Token (masked):', $logs[0] );
-		$this->assertStringNotContainsString( $token, $logs[0] );
-		$this->assertStringContainsString( 'Token (decrypted): ' . $token, $logs[1] );
+		$this->assertSame( ['Token decrypted: 25 chars'], $logs );
+		$this->assertStringNotContainsString( $token, implode( "\n", $logs ) );
+		$this->assertSame( [], $this->capturedMessages( 'line' ) );
 
 		$this->assertNotEmpty( $successes );
 		$this->assertStringContainsString( 'Access token decrypted', $successes[0] );

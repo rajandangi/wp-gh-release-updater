@@ -18,6 +18,58 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Logger {
 
 	/**
+	 * Redact tokens, Authorization headers, and signed download URL credentials.
+	 *
+	 * @param string $message Message to sanitize.
+	 * @return string Sanitized message.
+	 */
+	public static function redact( string $message ): string {
+		$original_message = $message;
+		$message          = preg_replace_callback(
+			'/(Authorization:\s*(?:token|Bearer))\s+\S+/i',
+			static function ( array $matches ): string {
+				$suffix     = '';
+				$credential = $matches[0];
+
+				if ( preg_match( '/[.,;]$/', $credential, $punctuation ) ) {
+					$suffix = $punctuation[0];
+				}
+
+				return $matches[1] . ' ***' . $suffix;
+			},
+			$message
+		);
+
+		if ( ! is_string( $message ) ) {
+			return $original_message;
+		}
+
+		$redacted = preg_replace(
+			array(
+				'/github_pat_[A-Za-z0-9_]+/',
+				'/ghp_[A-Za-z0-9]+/',
+				'/(X-Amz-Signature=)[^&\s]+/',
+				'/(X-Amz-Credential=)[^&\s]+/',
+				'/(access_token=)[^&\s]+/',
+				'/(sig=)[^&\s]+/',
+				'/(jwt=)[^&\s]+/',
+			),
+			array(
+				'github_pat_***',
+				'ghp_***',
+				'$1***',
+				'$1***',
+				'$1***',
+				'$1***',
+				'$1***',
+			),
+			$message
+		);
+
+		return is_string( $redacted ) ? $redacted : $message;
+	}
+
+	/**
 	 * Write warning/error entry to server logs.
 	 *
 	 * @param Config $config Config instance.
@@ -55,9 +107,11 @@ class Logger {
 			$config->getPluginSlug(),
 			$level,
 			$scope,
-			$message,
+			self::redact( $message ),
 			$context_suffix
 		);
+
+		$log_message = self::redact( $log_message );
 
 		// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Operational updater warnings/errors should appear in server logs.
 		error_log( $log_message );

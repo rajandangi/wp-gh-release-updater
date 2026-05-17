@@ -198,9 +198,6 @@ class GitHubUpdaterManager {
 			}
 		}
 
-		// Flush rewrite rules if needed
-		flush_rewrite_rules();
-
 		// Allow others to hook after activation
 		do_action( 'github_updater_activated', $this );
 	}
@@ -211,17 +208,7 @@ class GitHubUpdaterManager {
 	 * Call this from register_deactivation_hook in your main plugin file
 	 */
 	public function deactivate(): void {
-		// Clean up temporary files if any
-		$upload_dir = wp_upload_dir();
-		$temp_files = glob( $upload_dir['basedir'] . '/wp-github-updater-temp-*' );
-
-		if ( $temp_files ) {
-			foreach ( $temp_files as $file ) {
-				if ( is_file( $file ) ) {
-					wp_delete_file( $file );
-				}
-			}
-		}
+		// No package-owned temp files to clean. download_url() temp paths live in WP's tmp; the upgrader owns lifecycle.
 
 		// Allow others to hook after deactivation
 		do_action( 'github_updater_deactivated', $this );
@@ -240,17 +227,7 @@ class GitHubUpdaterManager {
 			$this->config->deleteOption( $key );
 		}
 
-		// Clean up temporary files
-		$upload_dir = wp_upload_dir();
-		$temp_files = glob( $upload_dir['basedir'] . '/wp-github-updater-temp-*' );
-
-		if ( $temp_files ) {
-			foreach ( $temp_files as $file ) {
-				if ( is_file( $file ) ) {
-					wp_delete_file( $file );
-				}
-			}
-		}
+		// No package-owned temp files to clean. download_url() temp paths live in WP's tmp; the upgrader owns lifecycle.
 
 		// Allow others to hook after uninstall
 		do_action( 'github_updater_uninstalled', $this );

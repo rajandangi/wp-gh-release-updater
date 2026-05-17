@@ -23,6 +23,11 @@ class GitHubAPI {
 	private const API_BASE_URL = 'https://api.github.com';
 
 	/**
+	 * Cache discriminator for unauthenticated GitHub API requests.
+	 */
+	private const PUBLIC_CACHE_DISCRIMINATOR = 'public';
+
+	/**
 	 * Config instance
 	 *
 	 * @var Config|null
@@ -113,6 +118,20 @@ class GitHubAPI {
 		$this->owner        = $owner;
 		$this->repo         = $repo;
 		$this->access_token = $token;
+	}
+
+	/**
+	 * Report whether this API instance is configured with an access token.
+	 *
+	 * Used by the snapshot writer so the persisted release_snapshot records
+	 * the auth mode that was in force when the snapshot was captured, rather
+	 * than re-evaluating the token at download time (which can flip mid-cycle
+	 * if the user clears the token after a check).
+	 *
+	 * @return bool True when a non-empty token is configured.
+	 */
+	public function hasAccessToken(): bool {
+		return '' !== trim( (string) $this->access_token );
 	}
 
 	/**
@@ -345,9 +364,15 @@ class GitHubAPI {
 	 * @return string Cache key
 	 */
 	private function getCacheKey( $url ) {
+		$auth_discriminator = self::PUBLIC_CACHE_DISCRIMINATOR;
+		if ( ! empty( $this->access_token ) ) {
+			// Token identity separates authenticated caches without exposing raw token material.
+			$auth_discriminator = 'authed_' . hash( 'sha256', $this->access_token );
+		}
+
 		$key_parts = array(
 			$url,
-			! empty( $this->access_token ) ? 'authed' : 'public',
+			$auth_discriminator,
 		);
 
 		$hash = md5( implode( '|', $key_parts ) );
@@ -377,7 +402,13 @@ class GitHubAPI {
 			$duration = $this->config->getCacheDuration();
 		}
 
-		return set_transient( $cache_key, $data, $duration );
+		$stored = set_transient( $cache_key, $data, $duration );
+
+		if ( $stored ) {
+			$this->registerCacheKey( $cache_key );
+		}
+
+		return $stored;
 	}
 
 	/**
@@ -386,19 +417,9 @@ class GitHubAPI {
 	 * @return bool True if cache exists
 	 */
 	public function hasCachedData() {
-		global $wpdb;
-		$cache_prefix = $this->config->getCachePrefix();
+		$registry = $this->getCacheRegistry();
 
-		// phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
-		$count = $wpdb->get_var(
-			$wpdb->prepare(
-				"SELECT COUNT(*) FROM {$wpdb->options} WHERE option_name LIKE %s",
-				$wpdb->esc_like( '_transient_' . $cache_prefix ) . '%'
-			)
-		);
-		// phpcs:enable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
-
-		return $count > 0;
+		return ! empty( $registry );
 	}
 
 	/**
@@ -408,35 +429,76 @@ class GitHubAPI {
 	 * @return void
 	 */
 	public function clearCache( $endpoint = null ) {
-		$cache_prefix = $this->config->getCachePrefix();
-
 		if ( null === $endpoint ) {
-			// Clear all cache entries with our prefix
-			// We need to use direct DB queries as WordPress doesn't provide
-			// a built-in function to delete transients by prefix pattern
-			global $wpdb;
+			foreach ( array_keys( $this->getCacheRegistry() ) as $cache_key ) {
+				delete_transient( $cache_key );
+			}
 
-			// phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
-			// Delete transient values
-			$wpdb->query(
-				$wpdb->prepare(
-					"DELETE FROM {$wpdb->options} WHERE option_name LIKE %s",
-					$wpdb->esc_like( '_transient_' . $cache_prefix ) . '%'
-				)
-			);
-
-			// Delete transient timeout entries
-			$wpdb->query(
-				$wpdb->prepare(
-					"DELETE FROM {$wpdb->options} WHERE option_name LIKE %s",
-					$wpdb->esc_like( '_transient_timeout_' . $cache_prefix ) . '%'
-				)
-			);
-			// phpcs:enable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+			delete_option( $this->getCacheRegistryOptionName() );
 		} else {
 			// Clear specific endpoint cache
 			$cache_key = $this->getCacheKey( $endpoint );
 			delete_transient( $cache_key );
+			$this->unregisterCacheKey( $cache_key );
 		}
+	}
+
+	/**
+	 * Get the option name used to track exact transient keys created by this API instance.
+	 *
+	 * @return string Registry option name.
+	 */
+	private function getCacheRegistryOptionName(): string {
+		return $this->config->getOptionName( 'cache_registry' );
+	}
+
+	/**
+	 * Return cache key registry as a hash set.
+	 *
+	 * @return array<string, true>
+	 */
+	private function getCacheRegistry(): array {
+		$registry = get_option( $this->getCacheRegistryOptionName(), array() );
+
+		return is_array( $registry ) ? $registry : array();
+	}
+
+	/**
+	 * Register an exact transient key so clearCache() can use delete_transient().
+	 *
+	 * @param string $cache_key Transient key.
+	 */
+	private function registerCacheKey( string $cache_key ): void {
+		$registry = $this->getCacheRegistry();
+
+		if ( isset( $registry[ $cache_key ] ) ) {
+			return;
+		}
+
+		$registry[ $cache_key ] = true;
+
+		update_option( $this->getCacheRegistryOptionName(), $registry, false );
+	}
+
+	/**
+	 * Remove an exact transient key from the registry.
+	 *
+	 * @param string $cache_key Transient key.
+	 */
+	private function unregisterCacheKey( string $cache_key ): void {
+		$registry = $this->getCacheRegistry();
+
+		if ( ! isset( $registry[ $cache_key ] ) ) {
+			return;
+		}
+
+		unset( $registry[ $cache_key ] );
+
+		if ( empty( $registry ) ) {
+			delete_option( $this->getCacheRegistryOptionName() );
+			return;
+		}
+
+		update_option( $this->getCacheRegistryOptionName(), $registry, false );
 	}
 }

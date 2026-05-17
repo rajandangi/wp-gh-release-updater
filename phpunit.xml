@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <phpunit
 	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-	xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/9.6/phpunit.xsd"
+	xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/12.5/phpunit.xsd"
 	bootstrap="tests/bootstrap.php"
 	colors="true"
-	verbose="true"
 	beStrictAboutOutputDuringTests="true"
-	beStrictAboutTodoAnnotatedTests="true"
-	convertDeprecationsToExceptions="true"
+	failOnDeprecation="true"
+	failOnPhpunitDeprecation="true"
 	failOnRisky="true"
-	failOnWarning="true">
+	failOnWarning="true"
+	cacheDirectory=".phpunit.cache">
 
 	<testsuites>
 		<testsuite name="WP GitHub Release Updater Test Suite">
@@ -17,19 +17,14 @@
 		</testsuite>
 	</testsuites>
 
-	<coverage
-		includeUncoveredFiles="true"
-		processUncoveredFiles="true"
-		pathCoverage="false"
-		ignoreDeprecatedCodeUnits="true"
-		disableCodeCoverageIgnore="true">
+	<source>
 		<include>
 			<directory suffix=".php">src</directory>
 		</include>
 		<exclude>
 			<directory>src/admin</directory>
 		</exclude>
-	</coverage>
+	</source>
 
 	<php>
 		<ini name="error_reporting" value="-1" />

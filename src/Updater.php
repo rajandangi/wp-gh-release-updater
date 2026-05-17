@@ -138,13 +138,17 @@ class Updater {
 				$this->config->updateOption( 'latest_version', $latest_version );
 				$this->config->updateOption( 'update_available', $result['update_available'] );
 				$this->config->updateOption( 'last_checked', time() );
-				// Store release data snapshot to prevent race conditions
+				// Store release data snapshot to prevent race conditions.
+				// `is_public` captures the auth mode at fetch time so the
+				// download path does not flip if the user later clears the
+				// token between check and update.
 				$release_snapshot = array(
 					'version'      => $latest_version,
 					'tag_name'     => $release_data['tag_name'],
 					'published_at' => $release_data['published_at'] ?? '',
 					'assets'       => $release_data['assets'] ?? array(),
 					'html_url'     => $release_data['html_url'] ?? '',
+					'is_public'    => ! $github_api->hasAccessToken(),
 				);
 				$this->config->updateOption( 'release_snapshot', $release_snapshot );
 			}
@@ -317,8 +321,8 @@ class Updater {
 						'package'      => $package_url,
 						'url'          => $repo_url,
 						'tested'       => get_bloginfo( 'version' ),
-						'requires'     => '6.0',
-						'requires_php' => '7.4',
+						'requires'     => '6.9',
+						'requires_php' => '8.3',
 						'icons'        => array(),
 						'banners'      => array(),
 					);
@@ -338,8 +342,8 @@ class Updater {
 					'url'          => $this->config->getOption( 'repository_url', 'https://github.com' ),
 					'package'      => '',
 					'tested'       => get_bloginfo( 'version' ),
-					'requires'     => '6.0',
-					'requires_php' => '7.4',
+					'requires'     => '6.9',
+					'requires_php' => '8.3',
 				);
 
 				// Remove from response if it exists there (in case of version rollback)
@@ -392,18 +396,18 @@ class Updater {
 	}
 
 	/**
-	 * Find suitable download asset and fully resolve its download URL.
+	 * Locate the release asset and resolve its direct download URL.
 	 *
-	 * Used by validateUpdateReadiness() to validate the entire download
-	 * pipeline (including pre-signed URL resolution for private repos).
-	 * This makes an HTTP call for private repos — do NOT use in filters
-	 * that run on every page load.
+	 * Used by validateUpdateReadiness() to verify the entire download
+	 * pipeline (asset selection + pre-signed URL resolution). Makes one
+	 * HTTP call for private repos — do NOT use in filters that run on
+	 * every admin page load (use getAssetPackageUrl() instead).
 	 *
-	 * @param array  $release_data GitHub release data.
+	 * @param array  $release_data GitHub release data (full or snapshot).
 	 * @param string $token        Access token for private repos.
-	 * @return string Resolved download URL or empty string.
+	 * @return string Resolved download URL, or empty string on failure.
 	 */
-	private function findDownloadAsset( $release_data, string $token = '' ) {
+	private function findDownloadAsset( array $release_data, string $token = '' ): string {
 		if ( empty( $release_data['assets'] ) ) {
 			Logger::log( $this->config, 'ERROR', 'Updater', 'No assets found in release. Please upload a proper build ZIP file.', array( 'action' => 'Download' ) );
 			return '';
@@ -412,14 +416,7 @@ class Updater {
 		$asset = $this->findMatchingAsset( $release_data );
 
 		if ( null === $asset ) {
-			$prefix           = rtrim( $this->config->getAssetPrefix(), '-' );
-			$available_assets = array_map(
-				function ( $a ) {
-					return $a['name'];
-				},
-				$release_data['assets']
-			);
-
+			$prefix = rtrim( $this->config->getAssetPrefix(), '-' );
 			Logger::log(
 				$this->config,
 				'ERROR',
@@ -427,14 +424,59 @@ class Updater {
 				sprintf(
 					'No matching asset found. Expected: %s.zip. Available: %s',
 					$prefix,
-					implode( ', ', $available_assets )
+					implode( ', ', array_column( $release_data['assets'], 'name' ) )
 				),
 				array( 'action' => 'Download' )
 			);
 			return '';
 		}
 
-		$download_url = $this->resolveAssetDownloadUrl( $asset, $token );
+		$token        = trim( $token );
+		$download_url = '';
+
+		if ( '' === $token && ! empty( $asset['browser_download_url'] ) ) {
+			// Public repo — browser_download_url works without auth.
+			$download_url = $asset['browser_download_url'];
+		} else {
+			$api_url = $asset['url'] ?? '';
+
+			if ( '' === $api_url ) {
+				// No API URL — fall back to browser_download_url if present.
+				$download_url = $asset['browser_download_url'] ?? '';
+			} else {
+				// Private (or authenticated) repo — resolve the API 302.
+				// WordPress strips Authorization on cross-domain redirects,
+				// so we capture the Location header ourselves.
+				$response = wp_remote_get(
+					$api_url,
+					array(
+						'timeout'     => 30,
+						'redirection' => 0,
+						'headers'     => array(
+							'Authorization' => 'token ' . $token,
+							'Accept'        => 'application/octet-stream',
+						),
+					)
+				);
+
+				if ( is_wp_error( $response ) ) {
+					Logger::log( $this->config, 'ERROR', 'Updater', 'Failed to resolve asset redirect.', array( 'action' => 'Download', 'error' => $response->get_error_message() ) );
+					return '';
+				}
+
+				$status   = wp_remote_retrieve_response_code( $response );
+				$location = wp_remote_retrieve_header( $response, 'location' );
+
+				if ( in_array( $status, array( 301, 302 ), true ) && '' !== $location ) {
+					$download_url = $location;
+				} elseif ( 200 === $status && ! empty( $asset['browser_download_url'] ) ) {
+					$download_url = $asset['browser_download_url'];
+				} else {
+					Logger::log( $this->config, 'WARN', 'Updater', sprintf( 'Unexpected status %d while resolving asset URL.', $status ), array( 'action' => 'Download', 'url' => $api_url ) );
+					return '';
+				}
+			}
+		}
 
 		if ( '' === $download_url ) {
 			Logger::log( $this->config, 'ERROR', 'Updater', 'Could not resolve download URL for asset.', array( 'action' => 'Download', 'asset' => $asset['name'] ) );
@@ -455,10 +497,12 @@ class Updater {
 	 * Used by injectUpdateInfo() where we need a URL to store in the transient
 	 * but must NOT make HTTP calls (the filter runs on every admin page load).
 	 *
-	 * For public repos: returns browser_download_url (directly downloadable).
-	 * For private repos: returns the GitHub API asset URL; the actual
-	 *                    pre-signed URL is resolved just-in-time by
-	 *                    handlePreDownload() when WordPress downloads.
+	 * Auth mode is read from the release snapshot's `is_public` flag — the
+	 * value captured at fetch time — not from the current token. If the user
+	 * clears their token between check and update, the package URL still
+	 * points at the API asset URL so handlePreDownload() can surface a
+	 * `github_no_access_token` WP_Error cleanly instead of leaking a private
+	 * download attempt through WP's standard downloader.
 	 *
 	 * @param array $release_data GitHub release data (full or snapshot).
 	 * @return string Package URL or empty string.
@@ -470,81 +514,24 @@ class Updater {
 			return '';
 		}
 
-		$token = trim( (string) $this->config->getAccessToken() );
+		// Honor the auth mode captured at fetch time. Snapshots written before
+		// the `is_public` field existed fall back to the current-token check
+		// for one cycle; the next refresh repopulates the field.
+		if ( array_key_exists( 'is_public', $release_data ) ) {
+			$is_public = (bool) $release_data['is_public'];
+		} else {
+			$is_public = '' === trim( (string) $this->config->getAccessToken() );
+		}
 
-		// Public repo — browser_download_url works without auth.
-		if ( '' === $token && ! empty( $asset['browser_download_url'] ) ) {
+		if ( $is_public && ! empty( $asset['browser_download_url'] ) ) {
 			return $asset['browser_download_url'];
 		}
 
-		// Private repo — return the API URL. handlePreDownload() will
-		// resolve this to a pre-signed URL at download time.
-		$url = $asset['url'] ?? '';
-		return $url;
-	}
-
-	/**
-	 * Resolve a GitHub release asset to a direct download URL.
-	 *
-	 * For private repositories the API asset URL returns a 302 redirect
-	 * to a pre-signed objects.githubusercontent.com URL.  WordPress strips
-	 * the Authorization header on cross-domain redirects, so we resolve
-	 * the redirect ourselves and return the final signed URL which requires
-	 * no further auth.
-	 *
-	 * For public repositories we use browser_download_url directly.
-	 *
-	 * @param array  $asset Single asset entry from the GitHub release payload.
-	 * @param string $token Access token for authenticated requests.
-	 * @return string Direct download URL, or empty string on failure.
-	 */
-	private function resolveAssetDownloadUrl( array $asset, string $token = '' ): string {
-		$token = trim( (string) $token );
-
-		// Public repo — browser_download_url works without auth.
-		if ( '' === $token && ! empty( $asset['browser_download_url'] ) ) {
-			return $asset['browser_download_url'];
-		}
-
-		// Private (or authenticated) repo — resolve the API redirect.
-		$api_url = $asset['url'] ?? '';
-		if ( '' === $api_url ) {
-			return $asset['browser_download_url'] ?? '';
-		}
-
-		$response = wp_remote_get(
-			$api_url,
-			array(
-				'timeout'     => 30,
-				'redirection' => 0, // Do NOT follow redirects — we want the Location header.
-				'headers'     => array(
-					'Authorization' => 'token ' . $token,
-					'Accept'        => 'application/octet-stream',
-				),
-			)
-		);
-
-		if ( is_wp_error( $response ) ) {
-			Logger::log( $this->config, 'ERROR', 'Updater', 'Failed to resolve asset redirect.', array( 'action' => 'Download', 'error' => $response->get_error_message() ) );
-			return '';
-		}
-
-		$status   = wp_remote_retrieve_response_code( $response );
-		$location = wp_remote_retrieve_header( $response, 'location' );
-
-		// 302/301 → the Location header contains the pre-signed URL.
-		if ( in_array( $status, array( 301, 302 ), true ) && '' !== $location ) {
-			return $location;
-		}
-
-		// If GitHub returned 200 directly (unlikely but possible), fall
-		// back to browser_download_url.
-		if ( 200 === $status && ! empty( $asset['browser_download_url'] ) ) {
-			return $asset['browser_download_url'];
-		}
-
-		Logger::log( $this->config, 'WARN', 'Updater', sprintf( 'Unexpected status %d while resolving asset URL.', $status ), array( 'action' => 'Download', 'url' => $api_url ) );
-		return '';
+		// Authenticated path — return the API URL. handlePreDownload() will
+		// resolve this to a pre-signed URL at download time, or return a
+		// `github_no_access_token` WP_Error if the token was cleared since
+		// the snapshot was captured.
+		return $asset['url'] ?? '';
 	}
 
 	/**
@@ -574,21 +561,33 @@ class Updater {
 	 * @return bool|string|\WP_Error Unmodified $reply, or local file path on success, or WP_Error.
 	 */
 	public function handlePreDownload( $reply, $package, $upgrader ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed
-		// Only intercept GitHub API asset URLs.
-		if ( ! is_string( $package )
-			|| strpos( $package, 'api.github.com' ) === false
-			|| strpos( $package, '/releases/assets/' ) === false
-		) {
+		// Honor any decision an earlier upgrader_pre_download filter already
+		// returned (a local file path, a WP_Error, or any non-false value).
+		// Only the default `false` means "no one has handled this yet".
+		if ( false !== $reply ) {
 			return $reply;
 		}
 
-		// Verify this package belongs to our release snapshot.
+		if ( ! is_string( $package ) || '' === $package ) {
+			return $reply;
+		}
+
+		// Verify this package belongs to our release snapshot. Match against
+		// EITHER the API asset URL (private repo path) OR the browser_download_url
+		// (public repo path) — both shapes are valid package URLs depending on
+		// what getAssetPackageUrl() wrote into the transient.
 		$release_snapshot = $this->config->getOption( 'release_snapshot', array() );
 		$matched_asset    = null;
+		$is_public_path   = false;
 
 		foreach ( $release_snapshot['assets'] ?? array() as $asset ) {
 			if ( isset( $asset['url'] ) && $asset['url'] === $package ) {
 				$matched_asset = $asset;
+				break;
+			}
+			if ( isset( $asset['browser_download_url'] ) && $asset['browser_download_url'] === $package ) {
+				$matched_asset  = $asset;
+				$is_public_path = true;
 				break;
 			}
 		}
@@ -598,10 +597,41 @@ class Updater {
 			return $reply;
 		}
 
+		// Acquire a cross-request lock so two simultaneous "Update now"
+		// clicks (or admin + cron) cannot race on file replacement. The
+		// lock is held through extraction: released in clearCacheAfterUpdate
+		// on success, or via WP core's 5-minute TTL if the request dies
+		// mid-update. Local failures inside this handler release explicitly.
+		$slug      = $this->config->getPluginSlug();
+		$lock_name = 'wp_gh_' . $slug . '_update';
+
+		if ( ! \WP_Upgrader::create_lock( $lock_name, 5 * MINUTE_IN_SECONDS ) ) {
+			Logger::log( $this->config, 'WARN', 'Updater', sprintf( 'Update skipped: another update is in progress for %s.', $slug ), array( 'action' => 'Lock' ) );
+			return new \WP_Error(
+				'update_in_progress',
+				__( 'A plugin update is already in progress. Please wait a few minutes and try again.', 'wp-github-release-updater' )
+			);
+		}
+
+		if ( $is_public_path ) {
+			// Public repo — browser_download_url is directly downloadable.
+			// WP's standard download_url() handles the rest. Lock stays
+			// held for that download + extraction; released by
+			// clearCacheAfterUpdate (success) or TTL (failure).
+			return $reply;
+		}
+
 		$token = trim( (string) $this->config->getAccessToken() );
 
 		if ( '' === $token ) {
-			return $reply;
+			// Private path requested but no token configured — cannot
+			// authenticate. Release lock so the slot frees immediately.
+			\WP_Upgrader::release_lock( $lock_name );
+			Logger::log( $this->config, 'ERROR', 'Updater', 'handlePreDownload: private asset URL without access token.', array( 'action' => 'Download' ) );
+			return new \WP_Error(
+				'github_no_access_token',
+				__( 'GitHub access token is required to download this private repository asset.', 'wp-github-release-updater' )
+			);
 		}
 
 		// ── Phase 1: Resolve the pre-signed download URL ──────────────
@@ -639,6 +669,7 @@ class Updater {
 		remove_filter( 'http_request_args', $guard_cb, PHP_INT_MAX );
 
 		if ( is_wp_error( $resolve_response ) ) {
+			\WP_Upgrader::release_lock( $lock_name );
 			Logger::log( $this->config, 'ERROR', 'Updater', 'handlePreDownload: Failed to resolve asset redirect.', array( 'action' => 'Download', 'error' => $resolve_response->get_error_message() ) );
 			return $resolve_response;
 		}
@@ -653,9 +684,13 @@ class Updater {
 			$tmpfile = download_url( $location, 300 );
 
 			if ( is_wp_error( $tmpfile ) ) {
+				\WP_Upgrader::release_lock( $lock_name );
 				Logger::log( $this->config, 'ERROR', 'Updater', 'handlePreDownload: Download from pre-signed URL failed.', array( 'action' => 'Download', 'error' => $tmpfile->get_error_message() ) );
 				return $tmpfile;
 			}
+
+			// Success — lock continues through extraction. unzip_file() will
+			// validate the archive and surface WP_Error on corruption.
 			return $tmpfile;
 		}
 
@@ -665,6 +700,7 @@ class Updater {
 			$body = wp_remote_retrieve_body( $resolve_response );
 
 			if ( '' === $body ) {
+				\WP_Upgrader::release_lock( $lock_name );
 				Logger::log( $this->config, 'ERROR', 'Updater', 'handlePreDownload: GitHub returned 200 but empty body.', array( 'action' => 'Download' ) );
 				return new \WP_Error(
 					'github_download_empty',
@@ -673,13 +709,36 @@ class Updater {
 			}
 
 			$tmpfilename = wp_tempnam( 'github_asset_' );
-			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
-			file_put_contents( $tmpfilename, $body );
 
+			if ( ! is_string( $tmpfilename ) || '' === $tmpfilename ) {
+				\WP_Upgrader::release_lock( $lock_name );
+				Logger::log( $this->config, 'ERROR', 'Updater', 'handlePreDownload: wp_tempnam() failed to create temp file for direct-200 body.', array( 'action' => 'Download' ) );
+				return new \WP_Error(
+					'github_tempfile_failed',
+					'Could not create a temporary file for the downloaded GitHub asset.'
+				);
+			}
+
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
+			$bytes_written = file_put_contents( $tmpfilename, $body );
+
+			if ( false === $bytes_written ) {
+				\WP_Upgrader::release_lock( $lock_name );
+				wp_delete_file( $tmpfilename );
+				Logger::log( $this->config, 'ERROR', 'Updater', 'handlePreDownload: file_put_contents() failed writing direct-200 body.', array( 'action' => 'Download', 'path' => $tmpfilename ) );
+				return new \WP_Error(
+					'github_tempfile_write_failed',
+					'Could not write the downloaded GitHub asset to a temporary file.'
+				);
+			}
+
+			// Success — lock continues through extraction. unzip_file() will
+			// validate the archive and surface WP_Error on corruption.
 			return $tmpfilename;
 		}
 
 		// Any other status — error out.
+		\WP_Upgrader::release_lock( $lock_name );
 		Logger::log( $this->config, 'ERROR', 'Updater', sprintf( 'handlePreDownload: GitHub returned HTTP %d.', $status ), array( 'action' => 'Download' ) );
 		return new \WP_Error(
 			'github_download_failed',
@@ -862,13 +921,7 @@ class Updater {
 		$this->config->updateOption( 'release_snapshot', array() );
 
 		// Clear WordPress plugin update transient
-		$plugin_basename = $this->config->getPluginBasename();
-		$transient       = get_site_transient( 'update_plugins' );
-
-		if ( is_object( $transient ) && isset( $transient->response[ $plugin_basename ] ) ) {
-			unset( $transient->response[ $plugin_basename ] );
-			set_site_transient( 'update_plugins', $transient );
-		}
+		delete_site_transient( 'update_plugins' );
 	}
 
 	/**
@@ -885,14 +938,25 @@ class Updater {
 			return;
 		}
 
-		// Check if our plugin was updated
+		/*
+		 * Check if our plugin was updated. WordPress passes:
+		 *   - `plugins` (array) for bulk updates triggered from Updates screen;
+		 *   - `plugin`  (string) for the single-plugin "Update now" link on
+		 *     plugins.php and the upgrader-API call path.
+		 * Accept either shape so the lock release fires on both flows.
+		 */
 		$plugin_basename = $this->config->getPluginBasename();
 		$plugins_updated = $options['plugins'] ?? array();
 
+		if ( isset( $options['plugin'] ) && is_string( $options['plugin'] ) ) {
+			$plugins_updated[] = $options['plugin'];
+		}
+
 		if ( in_array( $plugin_basename, $plugins_updated, true ) ) {
-			// Release update lock
-			$lock_key = 'update_in_progress_' . md5( $plugin_basename );
-			delete_transient( $lock_key );
+			// Release the WP_Upgrader lock acquired in handlePreDownload.
+			// Failure paths inside handlePreDownload release explicitly;
+			// this branch covers the success path through extraction.
+			\WP_Upgrader::release_lock( 'wp_gh_' . $this->config->getPluginSlug() . '_update' );
 
 			// Clear the update cache after successful update
 			$this->clearUpdateCache();
