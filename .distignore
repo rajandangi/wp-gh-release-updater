@@ -38,5 +38,9 @@ biome.json
 Thumbs.db
 
 # Package management
+composer.lock
 package.json
 package-lock.json
+
+# Build/release metadata
+VERSION
