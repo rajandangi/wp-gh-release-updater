@@ -2,6 +2,50 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## ⚠ Scope Guard (READ FIRST — applies to every change you propose)
+
+This package is a **thin bridge between GitHub Releases and the WordPress plugin updater**. It is not a replacement for any part of WordPress core. Before adding, accepting, or planning ANY code in this repo, apply this heuristic:
+
+> If the failure mode is generic to "fetch a ZIP and replace plugin files safely," **WordPress already handles it**. Add code only when the failure mode is one of:
+>
+> 1. **GitHub-specific** (release semantics, tag parsing, asset auth, signed URLs)
+> 2. **Auth-specific** (encrypted PAT storage, Authorization header injection, redaction)
+> 3. **Coordination across multiple instances of this package** (browser-global collisions, update lock when WP doesn't lock per-plugin)
+
+### Package legitimately owns
+
+1. GitHub release discovery, version extraction from tag names, pre-release filtering.
+2. Private-repo signed-asset download (Authorization header, asset URL resolution).
+3. Encrypted GitHub PAT storage (AES-256-CBC envelope, WP salt-derived key).
+4. Auth-aware HTTP cache (the wp.org transient assumes wp.org).
+5. Sensitive-string redaction in logs / AJAX / CLI output (`Logger::redact()`).
+6. `WP_Upgrader::create_lock()` around the package's own update path (WP does not call it for individual plugin updates by default).
+7. Browser-side isolation between multiple scoped copies on the same `plugins.php`.
+
+### WordPress (≥6.9) already handles — DO NOT REIMPLEMENT, DO NOT PRE-FLIGHT
+
+1. **ZIP integrity / corrupt-archive detection.** `unzip_file()` returns `WP_Error` on a bad archive. Do not add `ZipArchive::CHECKCONS` or any other pre-extract validator.
+2. **Automatic rollback on extraction failure.** `WP_Upgrader::install_package()` creates `wp-content/upgrade-temp-backup/plugins/{slug}/` and restores on failure. Do not write a parallel rollback layer.
+3. **Filesystem writability checks.** `WP_Filesystem` runs before extraction. Do not pre-flight.
+4. **Disk space.** Surfaces as a filesystem write failure. Do not call `disk_free_space()`.
+5. **Opcache invalidation after update.** WP invalidates for the affected plugin dir automatically.
+6. **Maintenance mode toggling during update.** WP toggles `.maintenance` for the duration.
+
+**Any new code that duplicates the right column is overkill. Reject it at review or before opening the PR.**
+
+### Worked example of what got caught
+
+- **2026-05 ZIP integrity check (cut).** Pre-v1.8.0 WIP added `Updater::checkZipIntegrity()` (using `ZipArchive::CHECKCONS`) plus an `ext-zip` requirement in `composer.json`. Both duplicated work `unzip_file()` already does. The bits were dropped from the v1.8.0 history before tagging — see the unpushed-commit rewrite documented in `ARCHITECTURE_IMPROVEMENT_PLAN.md`. If you find yourself proposing a similar pre-flight validator, stop.
+
+### Decision protocol when in doubt
+
+1. Identify the failure mode in one sentence.
+2. Ask: "Does WP core (6.9+) surface this through `WP_Error` already?" If yes, stop.
+3. Ask: "Is this GitHub-specific, auth-specific, or multi-instance coordination?" If no, stop.
+4. Only if both pass: write the code, and link this section in the PR description.
+
+The plan file ([ARCHITECTURE_IMPROVEMENT_PLAN.md](ARCHITECTURE_IMPROVEMENT_PLAN.md)) has an "Already Shipped" table. **Do not re-propose anything in that table.** The plan also has a "Deferred Decisions" section. Do not act on those without explicit user re-approval.
+
 ## What this is
 
 A self-contained Composer library (`rajandangi/wp-gh-release-updater`, PSR-4 namespace `WPGitHubReleaseUpdater\`) that WordPress plugins bundle to get manual GitHub release updates. **It is not itself a WordPress plugin** — it has no entry plugin file. Consumers instantiate `GitHubUpdaterManager` from their own plugin's main file. PHP `>=8.3` and WordPress `>=6.9` required.
@@ -67,6 +111,29 @@ Object graph built in `initializeComponents()` (`src/GitHubUpdaterManager.php`):
 - **`Logger`** (`src/Logger.php`) — `error_log` wrapper gated on `WP_DEBUG`. **`Logger::redact()` is the centralized scrubbing seam** — `Logger::log()` runs every message through it before `error_log`. Redaction covers GitHub PAT shapes (`ghp_*`, `github_pat_*`), `Authorization: token/Bearer …`, signed-URL params (`X-Amz-Signature`, `X-Amz-Credential`, `sig`, `jwt`, `access_token`). Call sites: `Updater` (`checkForUpdatesWithApi`, `findDownloadAsset`, `resolveAssetDownloadUrl`, `handlePreDownload`, `fixSourceDirectory`), `Admin` (`ajaxTestRepository`, `ajaxQuickCheckForUpdates`), `GitHubAPI::makeRequest`. Reach for `Logger::log()` rather than `error_log()` directly so debug output stays gated and redacted consistently. Reuse `Logger::redact()` directly when scrubbing strings outside the log path (e.g., AJAX response payloads, WP-CLI stdout).
 
 `GitHubUpdaterManager::activate()` / `deactivate()` / `uninstall()` are the lifecycle hooks the consumer plugin must wire to `register_activation_hook`/etc. — the library cannot register them itself because it has no main plugin file.
+
+## WordPress upgrader boundary (read before adding "reliability" code)
+
+The package hands off to WordPress's native `Plugin_Upgrader` / `WP_Upgrader::install_package()` pipeline for the actual download → extract → install → activate flow. **WordPress already handles a large set of failure modes**; do not reimplement them in this package.
+
+What WordPress (≥6.9) handles natively — **do not duplicate**:
+
+- **ZIP integrity / corrupt-archive detection.** `unzip_file()` validates archive structure during extraction and returns `WP_Error` (`incompatible_archive`, `empty_archive`, etc.) on failure. Adding a separate `ZipArchive::CHECKCONS` pre-check is redundant — was tried, reverted as P7.
+- **Automatic rollback on extraction failure.** `WP_Upgrader::install_package()` creates a temp backup in `wp-content/upgrade-temp-backup/plugins/{slug}/` before replacing files and restores it if the new version's main file is missing or extraction otherwise fails. Added in 6.3, hardened through 6.9. The package's WP 6.9 minimum exists specifically to inherit this — do not write a parallel rollback layer.
+- **Filesystem writability checks.** `WP_Filesystem::connect()` + `WP_Filesystem_*::is_writable()` run before extraction. Don't pre-flight separately.
+- **Disk space checks.** Implicit via filesystem write failures, which `unzip_file()` surfaces as `WP_Error`. Don't add `disk_free_space()` pre-checks.
+- **Opcache invalidation after update.** WP invalidates the opcache for the affected plugin directory automatically post-update (6.3+).
+- **Maintenance mode during update.** WP toggles the `.maintenance` file for the duration of the upgrade.
+
+What WordPress does **not** handle, that the package legitimately owns:
+
+- **Concurrent update lock.** `WP_Upgrader::create_lock()` / `release_lock()` exists (since 4.5) but WordPress doesn't call it for individual plugin updates by default — the package uses it (P6) to prevent two simultaneous `wp <slug> update` calls from racing.
+- **Auth-aware caching.** The HTTP cache layer is the package's responsibility (`GitHubAPI`); WordPress's native plugin transient assumes wp.org.
+- **GitHub release semantics.** Version extraction from tag names, pre-release filtering, private-repo signed-asset auth headers, `Authorization: Bearer …` injection — all package-specific.
+- **Token storage + crypto.** The AES-256-CBC envelope around the GitHub PAT is the package's responsibility (`Config`).
+- **Sensitive-string redaction in logs.** `Logger::redact()` exists because WordPress logs nothing automatically and `error_log` does not redact.
+
+**Decision heuristic before adding code in the update path:** if the failure mode is generic to "extract a ZIP and replace plugin files safely," WordPress already handles it. Add code only when the failure mode is GitHub-specific, auth-specific, or coordination across multiple instances of this package.
 
 ## Class-collision constraint (read before refactoring public API)
 
