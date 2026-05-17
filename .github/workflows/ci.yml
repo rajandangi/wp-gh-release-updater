@@ -6,6 +6,9 @@ on:
       - main
       - develop
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   code-quality:
     name: Code Quality & Syntax Checks
@@ -33,7 +36,7 @@ jobs:
         run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
 
       - name: Cache Composer dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ steps.composer-cache.outputs.dir }}
           key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
@@ -43,9 +46,9 @@ jobs:
         run: composer install --prefer-dist --no-progress --no-interaction
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: 'lts/*'
+          node-version: '24'
           cache: 'npm'
 
       - name: Install Node dependencies
@@ -83,7 +86,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
@@ -99,9 +102,9 @@ jobs:
         continue-on-error: true
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: 'lts/*'
+          node-version: '24'
 
       - name: Install Node dependencies
         run: npm ci
@@ -120,7 +123,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2

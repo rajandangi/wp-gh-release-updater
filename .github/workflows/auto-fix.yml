@@ -10,6 +10,9 @@ on:
 permissions:
   contents: write
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   auto-fix:
     name: Auto Fix Code Style Issues
@@ -32,9 +35,9 @@ jobs:
         run: composer install --prefer-dist --no-progress --no-interaction
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: 'lts/*'
+          node-version: '24'
           cache: 'npm'
 
       - name: Install Node dependencies
