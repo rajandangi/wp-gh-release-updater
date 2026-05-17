@@ -11,14 +11,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Concurrent update lock via `WP_Upgrader::create_lock()` around `handlePreDownload()`. Two simultaneous "Update now" clicks (or admin + cron) previously raced on file replacement; the second caller now returns `WP_Error( 'update_in_progress' )` cleanly. The lock spans the full update window — acquired before download, held through extraction, released by `clearCacheAfterUpdate()` on success. WP core's 5-minute TTL covers crash-mid-update.
+- Public and private GitHub-asset URLs are both gated by the lock. `handlePreDownload()` now matches packages against either `url` (API path) or `browser_download_url` (public path) in the release snapshot, so concurrency protection covers both flows.
+- `clearCacheAfterUpdate()` accepts both `$options['plugin']` (singular, used by the plugins.php "Update now" link and the upgrader-API call path) and `$options['plugins']` (array, used by bulk updates from the Updates screen). Previously only the bulk shape released the lock, so single-plugin updates relied on the 5-minute TTL.
+- `release_snapshot` now records an `is_public` flag captured at fetch time. `getAssetPackageUrl()` reads that flag instead of the live token, so clearing the access token between check and update no longer flips an authenticated package URL into a public-bypass leak.
+- New `GitHubAPI::hasAccessToken()` exposes the auth mode used by the API instance, so the snapshot writer can record it without leaking the token itself.
 
 ### Changed
-- WordPress minimum bumped to **6.9**. The package now inherits `WP_Upgrader::install_package()` automatic rollback (added 6.3, hardened through 6.9): if an update fails after extraction, WP restores the previous plugin from `wp-content/upgrade-temp-backup/plugins/{slug}/`. Consumer plugins should declare `Requires at least: 6.9` in their plugin headers so older sites block activation cleanly.
-- Collapsed the asset-resolution pipeline in `Updater`: `resolveAssetDownloadUrl()` is inlined into `findDownloadAsset()`, saving 27 lines in `src/Updater.php`. No behavioural change — all existing tests pass without edits.
+- WordPress minimum bumped to **6.9**. The package inherits `WP_Upgrader::install_package()` automatic rollback (added 6.3, hardened through 6.9): if an update fails after extraction, WP restores the previous plugin from `wp-content/upgrade-temp-backup/plugins/{slug}/`. Consumer plugins should declare `Requires at least: 6.9` in their plugin headers so older sites block activation cleanly.
+- Collapsed the asset-resolution pipeline in `Updater`: the old `resolveAssetDownloadUrl()` method is gone — its work is now inlined into `findDownloadAsset()` (-27 LOC in `src/Updater.php`). External observable behaviour is unchanged; only the internal call graph differs.
+- `injectUpdateInfo()` advertises the package's real minimums in the update transient: `requires => 6.9`, `requires_php => 8.3` (previously stale `6.0` / `7.4`).
+- `handlePreDownload()` short-circuits on any non-false `$reply` from an earlier `upgrader_pre_download` filter, so another plugin's local file path or `WP_Error` is honored instead of being silently re-handled.
+- Private-asset URL with an empty token now returns `WP_Error( 'github_no_access_token' )` up front and releases the lock, instead of attempting an unauthenticated download that would 401.
+- `wp_tempnam()` and `file_put_contents()` failures on the direct-200 download branch now release the lock and return a `WP_Error` (`github_tempfile_failed` / `github_tempfile_write_failed`) instead of handing a bad path to the extractor.
+- `phpcs.xml` `minimum_supported_wp_version` raised from `6.0` to `6.9` so deprecation sniffs reflect the package's actual minimum.
 
 ### Compatibility
 - All public surface (`GitHubUpdaterManager`, `Config`, `GitHubAPI`, `Updater`, `Admin`, `CLI`, `Logger`) preserved.
 - Existing encrypted access tokens remain readable. Cache key format unchanged.
+- Existing `release_snapshot` rows written before this release lack the new `is_public` field and fall back to the live-token heuristic for one cycle; the next refresh repopulates the field.
 
 ## [1.7.0] - 2026-05-17
 
