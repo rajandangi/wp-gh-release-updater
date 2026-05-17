@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.1] - 2026-05-17
+
+### Changed
+- Removed activation-time `flush_rewrite_rules()` from `GitHubUpdaterManager::activate()`. The package registers no rewrites, routes, CPTs, or taxonomies, so consumers that need a rewrite flush must own that in their plugin code.
+- Removed dead `wp-github-updater-temp-*` upload-directory cleanup from `GitHubUpdaterManager::deactivate()` and `uninstall()`. The package never created that file pattern; WordPress' downloader/upgrader owns update temp-file lifecycle.
+- Replaced manual `update_plugins` transient mutation in `Updater::clearUpdateCache()` with `delete_site_transient( 'update_plugins' )`, matching the package's existing cache-invalidation convention.
+- Replaced `Config::parsePluginHeaders()` with WordPress' canonical `get_plugin_data()` parser, loading `wp-admin/includes/plugin.php` on demand for WP-CLI/bootstrap paths where admin includes are not already loaded.
+- Replaced direct-SQL GitHub API transient clearing with an `autoload=false` cache-key registry. `GitHubAPI::clearCache()` now invalidates exact keys through `delete_transient()`, so persistent object caches are invalidated correctly.
+
+### Compatibility
+- Public PHP API surface remains unchanged.
+- Legacy GitHub API transients written before 1.8.1 are not in the new registry and may remain until their normal transient TTL expires. New cache writes register themselves automatically.
+- Concurrent GitHub API cache writes can still orphan one transient key in the registry's last-write-wins race window; the orphan expires naturally and the next cache write refreshes the registry.
+
 ## [1.8.0] - 2026-05-17
 
 ### Added
@@ -78,7 +92,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Report bugs**: [GitHub Issues](https://github.com/rajandangi/wp-gh-release-updater/issues)
 - **Request features**: [GitHub Discussions](https://github.com/rajandangi/wp-gh-release-updater/discussions)
 
-[Unreleased]: https://github.com/rajandangi/wp-gh-release-updater/compare/v1.8.0...HEAD
+[Unreleased]: https://github.com/rajandangi/wp-gh-release-updater/compare/v1.8.1...HEAD
+[1.8.1]: https://github.com/rajandangi/wp-gh-release-updater/compare/v1.8.0...v1.8.1
 [1.8.0]: https://github.com/rajandangi/wp-gh-release-updater/compare/v1.7.0...v1.8.0
 [1.7.0]: https://github.com/rajandangi/wp-gh-release-updater/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/rajandangi/wp-gh-release-updater/compare/v1.5.4...v1.6.0

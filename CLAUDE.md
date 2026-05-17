@@ -46,7 +46,7 @@ This package is a **thin bridge between GitHub Releases and the WordPress plugin
 
 The plan file ([ARCHITECTURE_IMPROVEMENT_PLAN.md](ARCHITECTURE_IMPROVEMENT_PLAN.md)) has an "Already Shipped" table. **Do not re-propose anything in that table.** The plan also has a "Deferred Decisions" section. Do not act on those without explicit user re-approval.
 
-## Wheel-Reinvention Audit Plan (keep this package thin)
+## Wheel-Reinvention Guardrail (keep this package thin)
 
 Use this section before adding update reliability, filesystem, cache, activation, or parsing code. The default answer should be: **WordPress probably already has this.**
 
@@ -60,39 +60,38 @@ The v1.8.0 update path correctly delegates the dangerous part of updates to Word
 - `WP_Upgrader::create_lock()` is used, not replaced, for the concurrency lock.
 - Settings pages use the Settings API; admin menus use `add_management_page()` / `add_submenu_page()`.
 
-Remaining code that needs pruning or re-audit is below. Treat these as the first cleanup queue before inventing any new mechanism.
+The cleanups below shipped in `7a3bd8f` for v1.8.1. They are documented here as a **do-not-reintroduce** list, not as pending work. If you find yourself proposing one of these again, stop and re-read the Scope Guard above.
 
-### P0 - Remove definite overreach / dead maintenance code
+### Completed cleanups - do not reintroduce
 
-1. **Remove `flush_rewrite_rules()` from `GitHubUpdaterManager::activate()`.**
+1. **`flush_rewrite_rules()` in `GitHubUpdaterManager::activate()` - removed.**
    - This package registers no rewrite tags, routes, CPTs, taxonomies, or rewrite rules.
-   - Flushing rewrites on activation is unnecessary site-wide work.
+   - Activation must not flush the whole site's rewrite cache.
    - If a consumer plugin needs a flush, that consumer owns it.
 
-2. **Remove upload-dir temp cleanup from `GitHubUpdaterManager::deactivate()` / `uninstall()` unless a real creator exists.**
-   - Current code searches uploads for `wp-github-updater-temp-*`.
+2. **`wp-github-updater-temp-*` upload-dir cleanup in `deactivate()` / `uninstall()` - removed.**
    - The package does not create that pattern in uploads; `download_url()` uses WordPress temp paths and the upgrader owns cleanup during updates.
    - Dead cleanup makes future agents think this package owns temp-file lifecycle. It does not.
+   - Do not expand uninstall into plugin lifecycle housekeeping; this package is only an update bridge.
 
-3. **Replace manual plugin-update transient surgery in `Updater::clearUpdateCache()`.**
-   - Current code reads `get_site_transient( 'update_plugins' )`, unsets one response row, then calls `set_site_transient()`.
-   - Prefer the local convention already used elsewhere in `Updater`: `delete_site_transient( 'update_plugins' )`.
+3. **Manual plugin-update transient surgery in `Updater::clearUpdateCache()` - replaced.**
+   - The package now uses `delete_site_transient( 'update_plugins' )`, matching the local convention already used elsewhere in `Updater`.
    - Do not introduce `wp_clean_plugins_cache( true )` here unless the plugin file cache itself must also be cleared.
    - Do not hand-maintain the shape of WordPress' update transient unless there is a proven package-specific reason.
 
-4. **Stop clearing GitHub API transients with direct SQL in `GitHubAPI::clearCache()`.**
-   - Direct DB deletion bypasses persistent object caches, so Redis/Memcached sites can keep serving stale values after the database rows are deleted.
-   - WordPress has no delete-by-prefix transient API. Keep a small option-based registry of exact cache keys this package creates, save that registry with `autoload=false`, then call `delete_transient( $key )` for each key.
-   - `GitHubAPI::hasCachedData()` should read the registry instead of querying `$wpdb->options`.
+4. **Direct SQL transient clearing in `GitHubAPI::clearCache()` / `hasCachedData()` - replaced.**
+   - Direct DB deletion bypasses persistent object caches, so Redis/Memcached sites could keep serving stale values after the database rows were deleted.
+   - WordPress has no delete-by-prefix transient API, so the package now keeps a small `autoload=false` option registry of exact cache keys it creates.
+   - `clearCache()` must call `delete_transient( $key )` for each registered key. `hasCachedData()` must read the registry instead of querying `$wpdb->options`.
+   - Legacy pre-v1.8.1 transients are not registered and expire naturally under the normal cache TTL.
 
-### P1 - Replace local copies of WordPress parsing behavior
-
-1. **Delete `Config::parsePluginHeaders()` and always use WordPress header parsing.**
-   - If `get_plugin_data()` is unavailable, load `ABSPATH . 'wp-admin/includes/plugin.php'` and call it.
+5. **`Config::parsePluginHeaders()` regex clone - deleted.**
+   - `extractPluginData()` now uses WordPress' `get_plugin_data()` parser.
+   - If `get_plugin_data()` is unavailable, load `ABSPATH . 'wp-admin/includes/plugin.php'` and call it. Fail loudly if real WordPress bootstrap is missing.
    - If only generic file headers are needed, use `get_file_data()` after loading the relevant core file.
    - Do not maintain a regex clone of WordPress' plugin header parser.
 
-### P2 - Keep, but do not expand, package-specific updater hooks
+### Keep, but do not expand, package-specific updater hooks
 
 These are legitimate because WordPress exposes hooks but cannot know GitHub/private-repo semantics:
 
@@ -117,7 +116,7 @@ These are legitimate because WordPress exposes hooks but cannot know GitHub/priv
    - Allowed because WordPress does not provide encrypted arbitrary secret storage or log redaction for plugin-owned GitHub PATs.
    - Keep the surface small: `Config::saveAccessToken()`, `Config::getAccessToken()`, `Logger::redact()`.
 
-### P3 - Review checklist before accepting future update-path code
+### Review checklist before accepting future update-path code
 
 For every proposed change under `Updater`, `GitHubAPI`, `Config`, or lifecycle hooks:
 
