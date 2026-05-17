@@ -317,8 +317,8 @@ class Updater {
 						'package'      => $package_url,
 						'url'          => $repo_url,
 						'tested'       => get_bloginfo( 'version' ),
-						'requires'     => '6.0',
-						'requires_php' => '7.4',
+						'requires'     => '6.9',
+						'requires_php' => '8.3',
 						'icons'        => array(),
 						'banners'      => array(),
 					);
@@ -338,8 +338,8 @@ class Updater {
 					'url'          => $this->config->getOption( 'repository_url', 'https://github.com' ),
 					'package'      => '',
 					'tested'       => get_bloginfo( 'version' ),
-					'requires'     => '6.0',
-					'requires_php' => '7.4',
+					'requires'     => '6.9',
+					'requires_php' => '8.3',
 				);
 
 				// Remove from response if it exists there (in case of version rollback)
@@ -547,21 +547,26 @@ class Updater {
 	 * @return bool|string|\WP_Error Unmodified $reply, or local file path on success, or WP_Error.
 	 */
 	public function handlePreDownload( $reply, $package, $upgrader ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed
-		// Only intercept GitHub API asset URLs.
-		if ( ! is_string( $package )
-			|| strpos( $package, 'api.github.com' ) === false
-			|| strpos( $package, '/releases/assets/' ) === false
-		) {
+		if ( ! is_string( $package ) || '' === $package ) {
 			return $reply;
 		}
 
-		// Verify this package belongs to our release snapshot.
+		// Verify this package belongs to our release snapshot. Match against
+		// EITHER the API asset URL (private repo path) OR the browser_download_url
+		// (public repo path) — both shapes are valid package URLs depending on
+		// what getAssetPackageUrl() wrote into the transient.
 		$release_snapshot = $this->config->getOption( 'release_snapshot', array() );
 		$matched_asset    = null;
+		$is_public_path   = false;
 
 		foreach ( $release_snapshot['assets'] ?? array() as $asset ) {
 			if ( isset( $asset['url'] ) && $asset['url'] === $package ) {
 				$matched_asset = $asset;
+				break;
+			}
+			if ( isset( $asset['browser_download_url'] ) && $asset['browser_download_url'] === $package ) {
+				$matched_asset  = $asset;
+				$is_public_path = true;
 				break;
 			}
 		}
@@ -587,13 +592,25 @@ class Updater {
 			);
 		}
 
-		$token = trim( (string) $this->config->getAccessToken() );
-
-		if ( '' === $token ) {
-			// Public repo — WP handles the download itself. Lock stays
+		if ( $is_public_path ) {
+			// Public repo — browser_download_url is directly downloadable.
+			// WP's standard download_url() handles the rest. Lock stays
 			// held for that download + extraction; released by
 			// clearCacheAfterUpdate (success) or TTL (failure).
 			return $reply;
+		}
+
+		$token = trim( (string) $this->config->getAccessToken() );
+
+		if ( '' === $token ) {
+			// Private path requested but no token configured — cannot
+			// authenticate. Release lock so the slot frees immediately.
+			\WP_Upgrader::release_lock( $lock_name );
+			Logger::log( $this->config, 'ERROR', 'Updater', 'handlePreDownload: private asset URL without access token.', array( 'action' => 'Download' ) );
+			return new \WP_Error(
+				'github_no_access_token',
+				__( 'GitHub access token is required to download this private repository asset.', 'wp-github-release-updater' )
+			);
 		}
 
 		// ── Phase 1: Resolve the pre-signed download URL ──────────────
@@ -671,8 +688,28 @@ class Updater {
 			}
 
 			$tmpfilename = wp_tempnam( 'github_asset_' );
+
+			if ( ! is_string( $tmpfilename ) || '' === $tmpfilename ) {
+				\WP_Upgrader::release_lock( $lock_name );
+				Logger::log( $this->config, 'ERROR', 'Updater', 'handlePreDownload: wp_tempnam() failed to create temp file for direct-200 body.', array( 'action' => 'Download' ) );
+				return new \WP_Error(
+					'github_tempfile_failed',
+					'Could not create a temporary file for the downloaded GitHub asset.'
+				);
+			}
+
 			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
-			file_put_contents( $tmpfilename, $body );
+			$bytes_written = file_put_contents( $tmpfilename, $body );
+
+			if ( false === $bytes_written ) {
+				\WP_Upgrader::release_lock( $lock_name );
+				wp_delete_file( $tmpfilename );
+				Logger::log( $this->config, 'ERROR', 'Updater', 'handlePreDownload: file_put_contents() failed writing direct-200 body.', array( 'action' => 'Download', 'path' => $tmpfilename ) );
+				return new \WP_Error(
+					'github_tempfile_write_failed',
+					'Could not write the downloaded GitHub asset to a temporary file.'
+				);
+			}
 
 			// Success — lock continues through extraction. unzip_file() will
 			// validate the archive and surface WP_Error on corruption.

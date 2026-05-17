@@ -16,7 +16,6 @@ use WPGitHubReleaseUpdater\GitHubAPI;
 use WPGitHubReleaseUpdater\Updater;
 use WP_Error;
 use WP_Upgrader;
-use ZipArchive;
 
 /**
  * Phase 2 reliability tests covering the upgrader_pre_download filter.
@@ -163,12 +162,18 @@ class UpdaterPreDownloadTest extends TestCase {
 	/**
 	 * P6: Public-repo passthrough keeps the lock held — WP downloads + extracts
 	 * the package itself, and clearCacheAfterUpdate / TTL handle release.
+	 *
+	 * Drives the test through the production browser_download_url shape that
+	 * getAssetPackageUrl() writes into the transient for public repos. Using
+	 * the API asset URL here would mask a regression where the lock gate
+	 * filters out public-repo packages entirely.
 	 */
 	#[Test]
 	public function holds_lock_through_public_repo_passthrough(): void {
 		$this->assertTrue( $this->config->saveAccessToken( '' ) );
 
-		$result = $this->updater->handlePreDownload( false, $this->package_url, null );
+		$browser_url = 'https://github.com/owner/repo/releases/download/v1.1.0/plugin.zip';
+		$result      = $this->updater->handlePreDownload( false, $browser_url, null );
 
 		$this->assertFalse( $result, 'passthrough returns original reply' );
 		$lock_name = 'wp_gh_' . $this->config->getPluginSlug() . '_update';
@@ -221,25 +226,25 @@ class UpdaterPreDownloadTest extends TestCase {
 	}
 
 	/**
-	 * Stub a complete successful download flow (resolve → download → valid ZIP).
+	 * Stub a complete successful download flow (resolve → download → file).
+	 *
+	 * handlePreDownload() no longer inspects ZIP contents (WP's unzip_file()
+	 * validates downstream), so a plain temp file is enough. Avoids pulling
+	 * in ext-zip as an implicit test-time dependency.
 	 */
 	private function stubSuccessfulDownload(): void {
-		$this->stubResolveRedirect( $this->writeValidZipFixture() );
+		$this->stubResolveRedirect( $this->writeStubDownloadFixture() );
 	}
 
 	/**
-	 * Write a minimal valid ZIP fixture to a temp path.
+	 * Write a plain-bytes temp file to stand in for the downloaded asset.
 	 */
-	private function writeValidZipFixture(): string {
-		$path = tempnam( sys_get_temp_dir(), 'wp_gh_zip_valid_' );
+	private function writeStubDownloadFixture(): string {
+		$path = tempnam( sys_get_temp_dir(), 'wp_gh_stub_dl_' );
 		$this->assertNotFalse( $path );
 
-		$zip = new ZipArchive();
-		$this->assertTrue( true === $zip->open( $path, ZipArchive::OVERWRITE ) );
-		$zip->addFromString( 'plugin/readme.txt', "=== Plugin ===\nVersion: 1.1.0\n" );
-		$zip->close();
+		file_put_contents( $path, "stub plugin payload\n" );
 
 		return $path;
 	}
-
 }
